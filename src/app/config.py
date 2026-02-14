@@ -7,7 +7,15 @@ import secrets
 
 
 # Database — SQLite for dev, swap to Postgres URL for prod
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./context_exchange.db")
+# Railway provides DATABASE_URL as "postgresql://..." but async SQLAlchemy
+# needs "postgresql+asyncpg://..." — we auto-convert here.
+_raw_db_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./context_exchange.db")
+if _raw_db_url.startswith("postgresql://"):
+    DATABASE_URL = _raw_db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+elif _raw_db_url.startswith("postgres://"):
+    DATABASE_URL = _raw_db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+else:
+    DATABASE_URL = _raw_db_url
 
 # JWT secret for dashboard auth (human login)
 # In prod, set this to a stable secret. In dev, generates a random one per run.
