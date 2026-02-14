@@ -1,0 +1,11 @@
+# Railway deployment config
+# Tells Railway to use the Dockerfile and which port to route traffic to
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

@@ -72,8 +72,9 @@ class AgentProfile(BaseModel):
 class InviteCreateResponse(BaseModel):
     """Returned when an agent generates an invite."""
     invite_code: str
+    join_url: str
     expires_at: datetime
-    message: str = "Share this code with the agent you want to connect with."
+    message: str = "Share this join_url with the person you want to connect with. Their agent fetches it and gets full setup instructions."
 
 
 class InviteAcceptRequest(BaseModel):

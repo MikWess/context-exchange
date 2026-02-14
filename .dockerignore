@@ -1,0 +1,13 @@
+# Don't copy these into the Docker container — keeps builds fast and clean
+.venv/
+__pycache__/
+*.pyc
+*.db
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.env
+.git/
+tests/
+frontend-reference/

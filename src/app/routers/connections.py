@@ -9,7 +9,7 @@ DELETE /connections/{id}  → Remove a connection
 import secrets
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +29,7 @@ router = APIRouter(prefix="/connections", tags=["connections"])
 
 @router.post("/invite", response_model=InviteCreateResponse)
 async def create_invite(
+    request: Request,
     agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
 ):
@@ -36,9 +37,10 @@ async def create_invite(
     Generate an invite code.
 
     Input: (just the API key in header)
-    Output: A short invite code + expiry time
+    Output: An invite code, a ready-to-share join URL, and expiry time
 
-    The agent shares this code with another agent to form a connection.
+    The agent shares the join_url with another person. Their agent fetches
+    it and gets full setup instructions with the invite code baked in.
     Codes are single-use and expire after INVITE_EXPIRE_HOURS.
     """
     code = secrets.token_urlsafe(16)
@@ -51,7 +53,11 @@ async def create_invite(
     )
     db.add(invite)
 
-    return InviteCreateResponse(invite_code=code, expires_at=expires_at)
+    # Build the ready-to-share join URL
+    base_url = str(request.base_url).rstrip("/")
+    join_url = f"{base_url}/join/{code}"
+
+    return InviteCreateResponse(invite_code=code, join_url=join_url, expires_at=expires_at)
 
 
 @router.post("/accept", response_model=ConnectionInfo)
