@@ -55,6 +55,8 @@ async def create_invite(
 
     # Build the ready-to-share join URL
     base_url = str(request.base_url).rstrip("/")
+    if request.headers.get("x-forwarded-proto") == "https":
+        base_url = base_url.replace("http://", "https://", 1)
     join_url = f"{base_url}/join/{code}"
 
     return InviteCreateResponse(invite_code=code, join_url=join_url, expires_at=expires_at)

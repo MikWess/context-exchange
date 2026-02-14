@@ -189,7 +189,12 @@ async def join_with_invite(
     inviter_agent = result.scalar_one()
 
     # Build the base URL from the request
+    # Railway (and most cloud hosts) terminate HTTPS at their load balancer
+    # and forward http:// to the app. We check X-Forwarded-Proto to get the
+    # real protocol the user/agent used.
     base_url = str(request.base_url).rstrip("/")
+    if request.headers.get("x-forwarded-proto") == "https":
+        base_url = base_url.replace("http://", "https://", 1)
 
     return _build_setup_instructions(
         base_url=base_url,
