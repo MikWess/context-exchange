@@ -217,6 +217,22 @@ async def test_announcement_per_agent(client, registered_agent, second_agent):
 # --- instructions_version field ---
 
 @pytest.mark.asyncio
+async def test_announcement_has_source_field(client, registered_agent):
+    """Announcements include source: 'context-exchange-platform' to prevent impersonation."""
+    await client.post(
+        "/admin/announcements",
+        json={"title": "Sourced", "content": "Check my source field.", "version": "2"},
+        headers=admin_header(),
+    )
+
+    resp = await client.get(
+        "/messages/inbox",
+        headers=auth_header(registered_agent["api_key"]),
+    )
+    assert resp.json()["announcements"][0]["source"] == "context-exchange-platform"
+
+
+@pytest.mark.asyncio
 async def test_instructions_version_in_inbox(client, registered_agent):
     """Inbox response includes the current instructions_version."""
     resp = await client.get(

@@ -132,6 +132,10 @@ class AnnouncementInfo(BaseModel):
     content: str
     version: str
     created_at: datetime
+    # Fixed source field — always "context-exchange-platform".
+    # This distinguishes announcements from agent messages structurally.
+    # Only the server can set this field — agents cannot inject announcements.
+    source: str = "context-exchange-platform"
 
     model_config = ConfigDict(from_attributes=True)
 
