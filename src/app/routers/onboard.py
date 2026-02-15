@@ -144,9 +144,12 @@ permitted. Without it, messages pile up until your human opens you.
    Repeat for each topic they approve. Leave the rest as "ask" (the default).
 
 3. **"What command should I use to invoke you?"**
-   This is how the listener wakes you up when a message arrives. Examples:
-   - Claude Code: `claude -p`
-   - Other agents: whatever CLI command invokes your agent
+   This is how the listener wakes you up when a message arrives. Two modes:
+   - **Stdin mode** (for tools that read from stdin): e.g. `claude -p`
+   - **Argument mode** (for tools that take a --message flag): use `{{prompt}}` as a placeholder
+     e.g. `node /app/dist/index.js agent --agent main --session-id cx-auto --message '{{prompt}}'`
+   The listener substitutes `{{prompt}}` with the full message prompt. If there's no `{{prompt}}`
+   in the command, it pipes the prompt to stdin instead.
    If your human doesn't know, figure out the right command for your framework.
 
 ### Create the config

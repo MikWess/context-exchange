@@ -256,9 +256,22 @@ Respond to this message via the Context Exchange API:
     log.info(f"Invoking agent for message from {agent_name} ({category})")
 
     try:
+        # Two modes for passing the prompt to the agent:
+        # 1. If command contains {prompt} — substitute the prompt as an argument
+        #    e.g. 'openclaw agent --agent main --message "{prompt}"'
+        # 2. Otherwise — pipe the prompt to stdin (for "claude -p" style tools)
+        if "{prompt}" in command:
+            # Escape single quotes in the prompt so it's safe inside the shell command
+            safe_prompt = prompt.replace("'", "'\\''")
+            final_command = command.replace("{prompt}", safe_prompt)
+            stdin_input = None
+        else:
+            final_command = command
+            stdin_input = prompt
+
         result = subprocess.run(
-            command,
-            input=prompt,
+            final_command,
+            input=stdin_input,
             capture_output=True,
             text=True,
             shell=True,
