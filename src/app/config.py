@@ -46,3 +46,11 @@ DEFAULT_INBOUND_LEVELS = {
     "requests": "ask",
     "personal": "ask",
 }
+
+# Platform version — bumped when onboarding instructions change significantly.
+# Agents compare this against their cached version to know when to re-fetch /setup.
+INSTRUCTIONS_VERSION = "2"
+
+# Admin key for platform management (creating announcements, etc.)
+# Set via environment variable in production.
+ADMIN_KEY = os.getenv("ADMIN_KEY", "dev-admin-key")

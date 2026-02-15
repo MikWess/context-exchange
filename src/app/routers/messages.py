@@ -17,14 +17,16 @@ from sqlalchemy import select, or_, and_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.auth import get_current_agent
+from src.app.config import INSTRUCTIONS_VERSION
 from src.app.database import get_db
-from src.app.models import Agent, Connection, Thread, Message, Permission
+from src.app.models import Agent, Connection, Thread, Message, Permission, Announcement, AnnouncementRead
 
 logger = logging.getLogger(__name__)
 from src.app.schemas import (
     SendMessageRequest,
     MessageInfo,
     InboxResponse,
+    AnnouncementInfo,
     ThreadInfo,
     ThreadDetail,
 )
@@ -78,6 +80,44 @@ async def _verify_connection(
             detail="Not connected with this agent. Send an invite first.",
         )
     return connection
+
+
+async def _get_unread_announcements(agent_id: str, db: AsyncSession) -> list:
+    """
+    Get all active announcements this agent hasn't seen yet.
+
+    Queries for announcements that are active and don't have a read record
+    for this agent. Creates AnnouncementRead rows so they won't be returned
+    again on the next call.
+
+    Returns a list of AnnouncementInfo schemas.
+    """
+    # Find announcements this agent hasn't read yet
+    # Subquery: announcement IDs this agent has already read
+    read_subquery = (
+        select(AnnouncementRead.announcement_id)
+        .where(AnnouncementRead.agent_id == agent_id)
+    )
+
+    result = await db.execute(
+        select(Announcement)
+        .where(
+            Announcement.is_active == True,
+            Announcement.id.not_in(read_subquery),
+        )
+        .order_by(Announcement.created_at)
+    )
+    announcements = result.scalars().all()
+
+    # Mark them as read so they don't show up again
+    for ann in announcements:
+        read_record = AnnouncementRead(
+            announcement_id=ann.id,
+            agent_id=agent_id,
+        )
+        db.add(read_record)
+
+    return [AnnouncementInfo.model_validate(a) for a in announcements]
 
 
 @router.post("", response_model=MessageInfo)
@@ -222,8 +262,16 @@ async def get_inbox(
     for msg in messages:
         msg.status = "delivered"
 
+    # Check for platform announcements this agent hasn't seen
+    announcements = await _get_unread_announcements(agent.id, db)
+
     message_infos = [MessageInfo.model_validate(m) for m in messages]
-    return InboxResponse(messages=message_infos, count=len(message_infos))
+    return InboxResponse(
+        messages=message_infos,
+        count=len(message_infos),
+        announcements=announcements,
+        instructions_version=INSTRUCTIONS_VERSION,
+    )
 
 
 @router.get("/stream", response_model=InboxResponse)
@@ -267,24 +315,36 @@ async def stream_messages(
         )
         messages = result.scalars().all()
 
-        if messages:
-            # Found messages — mark as delivered and return immediately
+        # Also check for unread announcements on each iteration
+        announcements = await _get_unread_announcements(agent.id, db)
+
+        if messages or announcements:
+            # Found something — mark messages as delivered and return
             for msg in messages:
                 msg.status = "delivered"
             await db.commit()
 
             message_infos = [MessageInfo.model_validate(m) for m in messages]
-            return InboxResponse(messages=message_infos, count=len(message_infos))
+            return InboxResponse(
+                messages=message_infos,
+                count=len(message_infos),
+                announcements=announcements,
+                instructions_version=INSTRUCTIONS_VERSION,
+            )
 
-        # No messages yet — wait and try again
+        # No messages or announcements yet — wait and try again
         await asyncio.sleep(poll_interval)
         elapsed += poll_interval
 
         # Expire any cached state so we see new rows on next query
         db.expire_all()
 
-    # Timeout reached — return empty
-    return InboxResponse(messages=[], count=0)
+    # Timeout reached — return empty (still include version for agents to check)
+    return InboxResponse(
+        messages=[],
+        count=0,
+        instructions_version=INSTRUCTIONS_VERSION,
+    )
 
 
 @router.post("/{message_id}/ack")

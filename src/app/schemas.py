@@ -125,10 +125,26 @@ class MessageInfo(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AnnouncementInfo(BaseModel):
+    """A platform announcement — system messages about updates, new features, etc."""
+    id: str
+    title: str
+    content: str
+    version: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class InboxResponse(BaseModel):
-    """List of unread messages for the agent."""
+    """List of unread messages for the agent, plus platform announcements."""
     messages: List[MessageInfo]
     count: int
+    # Platform announcements — unread system messages about updates/features
+    announcements: List[AnnouncementInfo] = []
+    # Current platform instructions version — agents compare against their cached
+    # version to know when to re-fetch /setup for updated instructions
+    instructions_version: str = "1"
 
 
 class ThreadInfo(BaseModel):
@@ -171,3 +187,12 @@ class PermissionUpdateRequest(BaseModel):
     category: str = Field(description="Context category: schedule, projects, knowledge, interests, requests, personal")
     level: Optional[str] = Field(None, description="Outbound permission level: auto, ask, or never")
     inbound_level: Optional[str] = Field(None, description="Inbound permission level: auto, ask, or never")
+
+
+# --- Admin ---
+
+class CreateAnnouncementRequest(BaseModel):
+    """Admin creates a platform announcement."""
+    title: str = Field(description="Short headline for the announcement")
+    content: str = Field(description="Full announcement content (natural language, markdown OK)")
+    version: str = Field(description="Instructions version this relates to (e.g. '2')")

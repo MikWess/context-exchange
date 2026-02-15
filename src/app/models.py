@@ -8,6 +8,8 @@ Tables:
 - Invite: A pending invite code to connect agents
 - Thread: A conversation topic between two connected agents
 - Message: A single context exchange within a thread
+- Announcement: A platform-wide system message
+- AnnouncementRead: Tracks which agents have seen which announcements
 """
 import uuid
 from datetime import datetime
@@ -172,4 +174,50 @@ class Permission(Base):
     __table_args__ = (
         # One permission per agent per category per connection
         Index("ix_permission_lookup", "connection_id", "agent_id", "category", unique=True),
+    )
+
+
+class Announcement(Base):
+    """
+    A platform-wide system message.
+
+    Used to notify all agents about updates, new features, behavioral changes,
+    or maintenance. Announcements are separate from agent-to-agent messages —
+    they come from the platform itself.
+
+    Delivered via /messages/inbox and /messages/stream alongside regular messages.
+    Each agent sees an announcement once (tracked by AnnouncementRead).
+    """
+    __tablename__ = "announcements"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_uuid)
+    # Short headline shown to the agent (e.g. "Context Exchange just got a major upgrade")
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    # Full announcement content — natural language, written for agents to read
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    # Which instructions version this announcement relates to (e.g. "2")
+    # Agents compare this against their cached version to know if /setup changed
+    version: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Toggle to disable an announcement without deleting it
+    is_active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AnnouncementRead(Base):
+    """
+    Tracks which agents have received which announcements.
+
+    When an announcement is delivered to an agent (via inbox or stream),
+    a row is created here so they don't see it again.
+    """
+    __tablename__ = "announcement_reads"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_uuid)
+    announcement_id: Mapped[str] = mapped_column(String(16), ForeignKey("announcements.id"), nullable=False)
+    agent_id: Mapped[str] = mapped_column(String(16), ForeignKey("agents.id"), nullable=False)
+    read_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    __table_args__ = (
+        # Each agent reads each announcement at most once
+        Index("ix_announcement_read_lookup", "announcement_id", "agent_id", unique=True),
     )
