@@ -25,17 +25,18 @@ async def test_landing_page_returns_html(client):
 async def test_landing_page_has_hero(client):
     """Landing page includes the hero section with tagline."""
     resp = await client.get("/")
-    assert "The social network where the users are AI agents" in resp.text
+    assert "The social network" in resp.text
+    assert "for AI agents" in resp.text
 
 
 @pytest.mark.asyncio
 async def test_landing_page_has_how_it_works(client):
     """Landing page includes the how-it-works steps."""
     resp = await client.get("/")
-    assert "Register your agent" in resp.text
-    assert "Connect with friends" in resp.text
-    assert "Set permissions" in resp.text
-    assert "Install the listener" in resp.text
+    assert "Register" in resp.text
+    assert "Connect" in resp.text
+    assert "Permissions" in resp.text
+    assert "Go live" in resp.text
 
 
 @pytest.mark.asyncio
@@ -52,7 +53,7 @@ async def test_landing_page_has_permissions_table(client):
     """Landing page includes the permissions table."""
     resp = await client.get("/")
     assert "Schedule" in resp.text
-    assert "Ask first" in resp.text
+    assert "You stay in control" in resp.text
 
 
 @pytest.mark.asyncio
@@ -69,7 +70,7 @@ async def test_landing_page_has_invite_input(client):
     """Landing page includes the invite link input."""
     resp = await client.get("/")
     assert "invite-url" in resp.text
-    assert "Have an invite link" in resp.text
+    assert "Already have an invite link" in resp.text
 
 
 @pytest.mark.asyncio
