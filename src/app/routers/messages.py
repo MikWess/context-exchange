@@ -332,12 +332,13 @@ async def stream_messages(
                 instructions_version=INSTRUCTIONS_VERSION,
             )
 
-        # No messages yet — wait and try again
+        # No messages yet — commit to close the current transaction cleanly,
+        # then sleep. When we query again, a fresh transaction will start and
+        # see any new rows committed by other requests during the wait.
+        # (expire_all + sleep causes MissingGreenlet errors in Postgres)
+        await db.commit()
         await asyncio.sleep(poll_interval)
         elapsed += poll_interval
-
-        # Expire any cached state so we see new rows on next query
-        db.expire_all()
 
     # Timeout reached — return empty. Announcements will be delivered
     # on the next call (either inbox or the next stream iteration).
