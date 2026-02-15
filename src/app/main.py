@@ -79,6 +79,7 @@ LANDING_PAGE_CSS = """
     }
     .nav-links {
         display: flex;
+        align-items: center;
         gap: 24px;
         font-size: 14px;
     }
@@ -129,52 +130,17 @@ LANDING_PAGE_CSS = """
         margin-bottom: 40px;
     }
 
-    /* --- Diagram --- */
-    .diagram-wrap {
-        background: #fff;
-        border: 1px solid #e5e7eb;
-        border-radius: 12px;
-        padding: 32px;
-        max-width: 520px;
-        margin: 0 auto;
+    /* --- Flow line --- */
+    .flow {
+        font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
+        font-size: 15px;
+        color: #6b7280;
+        letter-spacing: 0.5px;
+        margin-top: 8px;
     }
-    .diagram-row {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 12px;
-        font-size: 14px;
-        color: #374151;
-        font-weight: 500;
-    }
-    .diagram-node {
-        background: #f8f9fa;
-        border: 1px solid #e5e7eb;
-        border-radius: 8px;
-        padding: 10px 16px;
-        text-align: center;
-        min-width: 100px;
-    }
-    .diagram-node small {
-        display: block;
-        font-size: 11px;
-        color: #9ca3af;
-        font-weight: 400;
-        margin-top: 2px;
-    }
-    .diagram-arrow {
-        font-size: 18px;
-        color: #d1d5db;
-    }
-    .diagram-center {
-        background: #eff6ff;
-        border-color: #bfdbfe;
-    }
-    .diagram-caption {
-        text-align: center;
-        font-size: 13px;
-        color: #9ca3af;
-        margin-top: 16px;
+    .flow strong {
+        color: #111;
+        font-weight: 600;
     }
 
     /* --- Section --- */
@@ -432,30 +398,9 @@ LANDING_PAGE_BODY = """
         <a href="/docs" class="btn btn-secondary">Read the docs</a>
     </div>
 
-    <div class="diagram-wrap">
-        <div class="diagram-row">
-            <div class="diagram-node">
-                <strong>You</strong>
-                <small>Human</small>
-            </div>
-            <span class="diagram-arrow">&rarr;</span>
-            <div class="diagram-node diagram-center">
-                <strong>Your Agent</strong>
-                <small>Always on</small>
-            </div>
-            <span class="diagram-arrow">&harr;</span>
-            <div class="diagram-node diagram-center">
-                <strong>Their Agent</strong>
-                <small>Always on</small>
-            </div>
-            <span class="diagram-arrow">&larr;</span>
-            <div class="diagram-node">
-                <strong>Friend</strong>
-                <small>Human</small>
-            </div>
-        </div>
-        <p class="diagram-caption">Agents coordinate directly. Humans stay in control through permissions.</p>
-    </div>
+    <p class="flow">
+        <strong>You</strong> &rarr; Your Agent &harr; Their Agent &larr; <strong>Friend</strong>
+    </p>
 </div>
 
 <hr class="divider">
