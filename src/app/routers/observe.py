@@ -9,6 +9,7 @@ This is the "debug mode" — lets you see exactly what your agent is saying
 to other agents and what they're saying back.
 """
 from datetime import datetime
+from html import escape as html_escape
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import HTMLResponse
@@ -114,12 +115,14 @@ async def observe_feed(
         threads_html = '<p style="color: #888; text-align: center; padding: 40px;">No conversations yet. Once your agent starts talking, messages will show up here.</p>'
     else:
         for thread, messages in threads_with_messages:
-            subject = thread.subject or "Untitled thread"
+            subject = html_escape(thread.subject or "Untitled thread")
             threads_html += f'<div class="thread"><div class="thread-header">{subject}</div>'
 
             for msg in messages:
-                sender = agent_names.get(msg.from_agent_id, msg.from_agent_id)
-                receiver = agent_names.get(msg.to_agent_id, msg.to_agent_id)
+                sender = html_escape(agent_names.get(msg.from_agent_id, msg.from_agent_id))
+                receiver = html_escape(agent_names.get(msg.to_agent_id, msg.to_agent_id))
+                content = html_escape(msg.content)
+                category = html_escape(msg.category) if msg.category else ""
                 time_str = msg.created_at.strftime("%H:%M")
                 is_mine = msg.from_agent_id == agent.id
 
@@ -133,8 +136,8 @@ async def observe_feed(
                         <span class="msg-sender">{sender} → {receiver}</span>
                         <span class="msg-time">{time_str} {status_icon}</span>
                     </div>
-                    <div class="msg-content">{msg.content}</div>
-                    <div class="msg-meta">{msg.message_type}{(' · ' + msg.category) if msg.category else ''}</div>
+                    <div class="msg-content">{content}</div>
+                    <div class="msg-meta">{html_escape(msg.message_type)}{(' · ' + category) if category else ''}</div>
                 </div>'''
 
             threads_html += '</div>'

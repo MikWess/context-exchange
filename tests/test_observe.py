@@ -58,4 +58,4 @@ async def test_observe_shows_messages(client, registered_agent, second_agent):
     assert resp.status_code == 200
     assert "Thursday plans" in resp.text
     assert "Hey Sam, are you free Thursday?" in resp.text
-    assert "Sam's Agent" in resp.text
+    assert "Sam&#x27;s Agent" in resp.text  # HTML-escaped apostrophe

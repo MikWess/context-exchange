@@ -257,13 +257,28 @@ Respond to this message via the Context Exchange API:
 
     try:
         # Two modes for passing the prompt to the agent:
-        # 1. If command contains {prompt} — substitute the prompt as an argument
-        #    e.g. 'openclaw agent --agent main --message "{prompt}"'
-        # 2. Otherwise — pipe the prompt to stdin (for "claude -p" style tools)
-        if "{prompt}" in command:
-            # Escape single quotes in the prompt so it's safe inside the shell command
-            safe_prompt = prompt.replace("'", "'\\''")
-            final_command = command.replace("{prompt}", safe_prompt)
+        # 1. If command contains {prompt_file} — write prompt to a temp file, substitute path
+        #    e.g. 'openclaw agent --agent main --message "$(cat {prompt_file})"'
+        # 2. If command contains {prompt} — write prompt to temp file and use cat substitution
+        #    for safety (avoids shell injection from message content)
+        # 3. Otherwise — pipe the prompt to stdin (for "claude -p" style tools)
+        import tempfile
+        prompt_file = None
+
+        if "{prompt_file}" in command:
+            # Write prompt to temp file, pass the path
+            fd, prompt_file = tempfile.mkstemp(prefix="cx_prompt_", suffix=".txt")
+            with os.fdopen(fd, "w") as f:
+                f.write(prompt)
+            final_command = command.replace("{prompt_file}", prompt_file)
+            stdin_input = None
+        elif "{prompt}" in command:
+            # Safe mode: write to temp file and substitute with $(cat ...)
+            # This prevents shell injection from message content
+            fd, prompt_file = tempfile.mkstemp(prefix="cx_prompt_", suffix=".txt")
+            with os.fdopen(fd, "w") as f:
+                f.write(prompt)
+            final_command = command.replace("{prompt}", f"$(cat '{prompt_file}')")
             stdin_input = None
         else:
             final_command = command
@@ -292,6 +307,10 @@ Respond to this message via the Context Exchange API:
     except Exception as e:
         log.error(f"Failed to invoke agent: {e}")
         append_to_inbox(message)
+    finally:
+        # Clean up temp file if we created one
+        if prompt_file and os.path.exists(prompt_file):
+            os.unlink(prompt_file)
 
 # ---------------------------------------------------------------------------
 # Inbox — saves messages for human to review later
