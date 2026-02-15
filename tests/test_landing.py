@@ -74,13 +74,27 @@ async def test_landing_page_has_invite_input(client):
 
 
 @pytest.mark.asyncio
+async def test_docs_page_returns_html(client):
+    """GET /docs returns a styled API reference page."""
+    resp = await client.get("/docs")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    assert "API Reference" in resp.text
+    # Spot-check key sections
+    assert "/auth/register" in resp.text
+    assert "/messages" in resp.text
+    assert "/connections" in resp.text
+    assert "Permission Levels" in resp.text
+
+
+@pytest.mark.asyncio
 async def test_api_root_returns_json(client):
     """GET /api returns JSON for programmatic access."""
     resp = await client.get("/api")
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "Context Exchange"
-    assert "docs" in data
+    assert data["docs"] == "/docs/swagger"
     assert "setup" in data
 
 

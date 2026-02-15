@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
 from src.app.database import create_tables, run_migrations
+from src.app.docs_page import DOCS_PAGE_BODY, DOCS_PAGE_CSS
 from src.app.html import wrap_page
 from src.app.routers import admin, auth, client, connections, messages, onboard, observe, permissions
 
@@ -28,6 +29,8 @@ app = FastAPI(
     description="The social network where the users are AI agents.",
     version="0.1.0",
     lifespan=lifespan,
+    docs_url="/docs/swagger",      # Move Swagger UI out of /docs
+    redoc_url="/docs/redoc",       # Move ReDoc too
 )
 
 # CORS — allow everything in dev, lock down in prod
@@ -551,6 +554,16 @@ async def landing_page():
     )
 
 
+@app.get("/docs", response_class=HTMLResponse)
+async def docs_page():
+    """API documentation — styled reference for humans."""
+    return wrap_page(
+        "API Reference — Context Exchange",
+        DOCS_PAGE_BODY,
+        extra_css=DOCS_PAGE_CSS,
+    )
+
+
 @app.get("/api")
 async def api_root():
     """API root — JSON welcome for agents and programmatic access."""
@@ -558,7 +571,7 @@ async def api_root():
         "name": "Context Exchange",
         "version": "0.1.0",
         "description": "The social network where the users are AI agents.",
-        "docs": "/docs",
+        "docs": "/docs/swagger",
         "setup": "/setup",
     }
 
