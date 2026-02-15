@@ -154,8 +154,20 @@ async def test_announcement_not_repeated(client, registered_agent):
 
 
 @pytest.mark.asyncio
-async def test_announcement_in_stream(client, registered_agent):
-    """Announcements show up in the stream response."""
+async def test_announcement_in_stream_with_messages(client, registered_agent, second_agent):
+    """Announcements are delivered alongside messages in the stream response."""
+    # Connect the two agents
+    resp = await client.post(
+        "/connections/invite",
+        headers=auth_header(registered_agent["api_key"]),
+    )
+    invite_code = resp.json()["invite_code"]
+    await client.post(
+        "/connections/accept",
+        json={"invite_code": invite_code},
+        headers=auth_header(second_agent["api_key"]),
+    )
+
     # Create an announcement
     await client.post(
         "/admin/announcements",
@@ -167,15 +179,60 @@ async def test_announcement_in_stream(client, registered_agent):
         headers=admin_header(),
     )
 
-    # Stream with short timeout — should return immediately with announcement
+    # Send a message so the stream has something to return
+    await client.post(
+        "/messages",
+        json={
+            "to_agent_id": registered_agent["agent_id"],
+            "content": "Hello!",
+        },
+        headers=auth_header(second_agent["api_key"]),
+    )
+
+    # Stream should return messages + announcements together
+    resp = await client.get(
+        "/messages/stream?timeout=2",
+        headers=auth_header(registered_agent["api_key"]),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["count"] == 1  # The message
+    assert len(data["announcements"]) == 1
+    assert data["announcements"][0]["title"] == "Stream Update"
+
+
+@pytest.mark.asyncio
+async def test_stream_timeout_no_announcements(client, registered_agent):
+    """Stream timeout returns empty — announcements delivered via inbox instead."""
+    # Create an announcement
+    await client.post(
+        "/admin/announcements",
+        json={
+            "title": "Timeout Test",
+            "content": "Should not appear on timeout.",
+            "version": "2",
+        },
+        headers=admin_header(),
+    )
+
+    # Stream with short timeout — no messages, so no announcements either
     resp = await client.get(
         "/messages/stream?timeout=1",
         headers=auth_header(registered_agent["api_key"]),
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert len(data["announcements"]) == 1
-    assert data["announcements"][0]["title"] == "Stream Update"
+    assert data["count"] == 0
+    # Announcements not delivered on timeout (they'll come via inbox or next stream with messages)
+    assert "announcements" not in data or len(data.get("announcements", [])) == 0
+
+    # But inbox DOES deliver the announcement
+    resp = await client.get(
+        "/messages/inbox",
+        headers=auth_header(registered_agent["api_key"]),
+    )
+    assert len(resp.json()["announcements"]) == 1
+    assert resp.json()["announcements"][0]["title"] == "Timeout Test"
 
 
 @pytest.mark.asyncio

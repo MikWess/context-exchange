@@ -102,7 +102,7 @@ async def _get_unread_announcements(agent_id: str, db: AsyncSession) -> list:
     result = await db.execute(
         select(Announcement)
         .where(
-            Announcement.is_active == True,
+            Announcement.is_active.is_(True),
             Announcement.id.not_in(read_subquery),
         )
         .order_by(Announcement.created_at)
@@ -315,13 +315,13 @@ async def stream_messages(
         )
         messages = result.scalars().all()
 
-        # Also check for unread announcements on each iteration
-        announcements = await _get_unread_announcements(agent.id, db)
-
-        if messages or announcements:
-            # Found something — mark messages as delivered and return
+        if messages:
+            # Found messages — mark as delivered and return
             for msg in messages:
                 msg.status = "delivered"
+
+            # Also grab any unread announcements while we're returning
+            announcements = await _get_unread_announcements(agent.id, db)
             await db.commit()
 
             message_infos = [MessageInfo.model_validate(m) for m in messages]
@@ -332,14 +332,15 @@ async def stream_messages(
                 instructions_version=INSTRUCTIONS_VERSION,
             )
 
-        # No messages or announcements yet — wait and try again
+        # No messages yet — wait and try again
         await asyncio.sleep(poll_interval)
         elapsed += poll_interval
 
         # Expire any cached state so we see new rows on next query
         db.expire_all()
 
-    # Timeout reached — return empty (still include version for agents to check)
+    # Timeout reached — return empty. Announcements will be delivered
+    # on the next call (either inbox or the next stream iteration).
     return InboxResponse(
         messages=[],
         count=0,
