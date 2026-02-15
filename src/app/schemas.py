@@ -19,6 +19,7 @@ class RegisterRequest(BaseModel):
     name: str = Field(description="Human's display name")
     agent_name: str = Field(description="What the agent calls itself")
     framework: Optional[str] = Field(None, description="Agent framework: openclaw, gpt, claude, custom")
+    webhook_url: Optional[str] = Field(None, description="URL to receive webhook notifications when messages arrive")
 
 
 class RegisterResponse(BaseModel):
@@ -61,10 +62,16 @@ class AgentProfile(BaseModel):
     name: str
     framework: Optional[str]
     status: str
+    webhook_url: Optional[str]
     last_seen_at: datetime
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AgentUpdateRequest(BaseModel):
+    """Update agent settings (e.g. webhook URL)."""
+    webhook_url: Optional[str] = Field(None, description="URL to receive webhook notifications. Set to empty string to clear.")
 
 
 # --- Connections ---
@@ -140,3 +147,27 @@ class ThreadDetail(BaseModel):
     """Full thread with all messages."""
     thread: ThreadInfo
     messages: List[MessageInfo]
+
+
+# --- Permissions ---
+
+class PermissionInfo(BaseModel):
+    """A single permission: outbound + inbound levels for one category on one connection."""
+    category: str
+    level: str  # outbound: auto, ask, never
+    inbound_level: str  # inbound: auto, ask, never
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PermissionListResponse(BaseModel):
+    """All permissions for a connection (from one agent's perspective)."""
+    connection_id: str
+    permissions: List[PermissionInfo]
+
+
+class PermissionUpdateRequest(BaseModel):
+    """Update the permission level for one category."""
+    category: str = Field(description="Context category: schedule, projects, knowledge, interests, requests, personal")
+    level: Optional[str] = Field(None, description="Outbound permission level: auto, ask, or never")
+    inbound_level: Optional[str] = Field(None, description="Inbound permission level: auto, ask, or never")

@@ -57,6 +57,9 @@ class Agent(Base):
     # What agent framework (openclaw, gpt, claude, custom)
     framework: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="online")
+    # Webhook URL — if set, our server POSTs messages here on delivery
+    # Agents without a webhook keep polling /messages/inbox instead
+    webhook_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
@@ -133,4 +136,40 @@ class Message(Base):
 
     __table_args__ = (
         Index("ix_message_inbox", "to_agent_id", "status"),
+    )
+
+
+class Permission(Base):
+    """
+    Per-connection, per-category permission setting.
+
+    Each agent in a connection controls their own outbound sharing.
+    When two agents connect, default permissions are created for every
+    category — all set to "ask".
+
+    Levels:
+    - auto: agent shares freely (e.g. schedules, availability)
+    - ask: agent checks with human first (default for everything)
+    - never: hard block, agent can't share this category
+    """
+    __tablename__ = "permissions"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_uuid)
+    # Which connection this permission belongs to
+    connection_id: Mapped[str] = mapped_column(String(16), ForeignKey("connections.id"), nullable=False)
+    # Which agent's permission this is (the agent who controls outbound sharing)
+    agent_id: Mapped[str] = mapped_column(String(16), ForeignKey("agents.id"), nullable=False)
+    # Context category: schedule, projects, knowledge, interests, requests, personal
+    category: Mapped[str] = mapped_column(String(50), nullable=False)
+    # Outbound permission level: auto, ask, never
+    # Controls what this agent is allowed to SEND to the other agent
+    level: Mapped[str] = mapped_column(String(10), default="ask", nullable=False)
+    # Inbound permission level: auto, ask, never
+    # Controls what this agent will ACCEPT from the other agent
+    inbound_level: Mapped[str] = mapped_column(String(10), default="auto", nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    __table_args__ = (
+        # One permission per agent per category per connection
+        Index("ix_permission_lookup", "connection_id", "agent_id", "category", unique=True),
     )

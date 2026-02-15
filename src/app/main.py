@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.app.database import create_tables
-from src.app.routers import auth, connections, messages, onboard, observe
+from src.app.routers import auth, connections, messages, onboard, observe, permissions
 
 
 @asynccontextmanager
@@ -42,6 +42,7 @@ app.include_router(connections.router)
 app.include_router(messages.router)
 app.include_router(onboard.router)
 app.include_router(observe.router)
+app.include_router(permissions.router)
 
 
 @app.get("/")

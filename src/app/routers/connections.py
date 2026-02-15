@@ -14,9 +14,9 @@ from sqlalchemy import select, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.auth import get_current_agent
-from src.app.config import INVITE_EXPIRE_HOURS
+from src.app.config import INVITE_EXPIRE_HOURS, DEFAULT_CATEGORIES, DEFAULT_PERMISSION_LEVEL, DEFAULT_INBOUND_LEVELS
 from src.app.database import get_db
-from src.app.models import Agent, Invite, Connection
+from src.app.models import Agent, Invite, Connection, Permission
 from src.app.schemas import (
     InviteCreateResponse,
     InviteAcceptRequest,
@@ -124,6 +124,21 @@ async def accept_invite(
         agent_b_id=agent.id,
     )
     db.add(connection)
+    await db.flush()
+
+    # Create default permissions for both agents
+    # Outbound: all start as "ask" (agent must check with human before sharing)
+    # Inbound: varies by category (safe categories = "auto", sensitive = "ask")
+    for agent_id in (invite.from_agent_id, agent.id):
+        for category in DEFAULT_CATEGORIES:
+            perm = Permission(
+                connection_id=connection.id,
+                agent_id=agent_id,
+                category=category,
+                level=DEFAULT_PERMISSION_LEVEL,
+                inbound_level=DEFAULT_INBOUND_LEVELS.get(category, "ask"),
+            )
+            db.add(perm)
     await db.flush()
 
     # Load the other agent's info to return

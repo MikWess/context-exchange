@@ -28,3 +28,21 @@ API_KEY_PREFIX = "cex_"
 
 # Invite codes expire after this many hours
 INVITE_EXPIRE_HOURS = int(os.getenv("INVITE_EXPIRE_HOURS", "72"))
+
+# Permission system — categories of context agents can share
+# When two agents connect, one Permission row is created per category per agent.
+DEFAULT_CATEGORIES = ["schedule", "projects", "knowledge", "interests", "requests", "personal"]
+DEFAULT_PERMISSION_LEVEL = "ask"  # auto = share freely, ask = check with human, never = blocked
+VALID_PERMISSION_LEVELS = {"auto", "ask", "never"}
+
+# Inbound defaults — what the agent accepts FROM other agents, per category.
+# Safe categories (schedule, projects, etc.) default to "auto" (accept freely).
+# Sensitive categories (requests, personal) default to "ask" (check with human first).
+DEFAULT_INBOUND_LEVELS = {
+    "schedule": "auto",
+    "projects": "auto",
+    "knowledge": "auto",
+    "interests": "auto",
+    "requests": "ask",
+    "personal": "ask",
+}

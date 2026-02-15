@@ -7,15 +7,20 @@ POST /messages/{id}/ack  → Acknowledge receipt of a message
 GET  /messages/thread/{id} → Get all messages in a thread
 GET  /messages/threads   → List all threads for the current agent
 """
+import asyncio
+import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import httpx
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import select, or_, and_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.auth import get_current_agent
 from src.app.database import get_db
-from src.app.models import Agent, Connection, Thread, Message
+from src.app.models import Agent, Connection, Thread, Message, Permission
+
+logger = logging.getLogger(__name__)
 from src.app.schemas import (
     SendMessageRequest,
     MessageInfo,
@@ -25,6 +30,23 @@ from src.app.schemas import (
 )
 
 router = APIRouter(prefix="/messages", tags=["messages"])
+
+
+async def _deliver_webhook(webhook_url: str, payload: dict):
+    """
+    Fire-and-forget webhook delivery.
+
+    POSTs the message payload to the agent's webhook URL.
+    If it fails, we log it but don't error — the message is still in the
+    inbox for polling as a fallback.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(webhook_url, json=payload)
+            logger.info(f"Webhook delivered to {webhook_url}: {resp.status_code}")
+    except Exception as e:
+        # Webhook failure is not fatal — message is still in the inbox
+        logger.warning(f"Webhook delivery failed for {webhook_url}: {e}")
 
 
 async def _verify_connection(
@@ -61,6 +83,7 @@ async def _verify_connection(
 @router.post("", response_model=MessageInfo)
 async def send_message(
     req: SendMessageRequest,
+    background_tasks: BackgroundTasks,
     agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
 ):
@@ -85,6 +108,41 @@ async def send_message(
 
     # Verify connection
     connection = await _verify_connection(agent.id, req.to_agent_id, db)
+
+    # Check permissions — if the message has a category, verify the sender
+    # is allowed to share that category on this connection.
+    # Messages with no category (plain text chat) always go through.
+    if req.category:
+        result = await db.execute(
+            select(Permission).where(
+                Permission.connection_id == connection.id,
+                Permission.agent_id == agent.id,
+                Permission.category == req.category,
+            )
+        )
+        permission = result.scalar_one_or_none()
+        # If permission exists and is "never", block the message
+        if permission and permission.level == "never":
+            raise HTTPException(
+                status_code=403,
+                detail=f"You don't have permission to share {req.category} with this connection",
+            )
+
+        # Inbound check — does the RECEIVER accept this category?
+        result = await db.execute(
+            select(Permission).where(
+                Permission.connection_id == connection.id,
+                Permission.agent_id == req.to_agent_id,
+                Permission.category == req.category,
+            )
+        )
+        inbound_perm = result.scalar_one_or_none()
+        if inbound_perm and inbound_perm.inbound_level == "never":
+            # Vague error — don't reveal the receiver's permission settings
+            raise HTTPException(
+                status_code=403,
+                detail="Message could not be delivered",
+            )
 
     # Get or create thread
     if req.thread_id:
@@ -121,6 +179,16 @@ async def send_message(
     thread.last_message_at = message.created_at
 
     await db.flush()
+
+    # Webhook delivery — if the recipient has a webhook URL, push the message
+    # to them instantly instead of waiting for them to poll
+    result = await db.execute(select(Agent).where(Agent.id == req.to_agent_id))
+    recipient = result.scalar_one()
+    if recipient.webhook_url:
+        # Build the payload matching MessageInfo schema
+        payload = MessageInfo.model_validate(message).model_dump(mode="json")
+        background_tasks.add_task(_deliver_webhook, recipient.webhook_url, payload)
+
     return MessageInfo.model_validate(message)
 
 
@@ -156,6 +224,67 @@ async def get_inbox(
 
     message_infos = [MessageInfo.model_validate(m) for m in messages]
     return InboxResponse(messages=message_infos, count=len(message_infos))
+
+
+@router.get("/stream", response_model=InboxResponse)
+async def stream_messages(
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+    timeout: int = Query(30, ge=1, le=60, description="How long to wait for messages (seconds)"),
+):
+    """
+    Long-polling endpoint — wait for new messages in real time.
+
+    Input: API key + optional timeout (1-60 seconds, default 30)
+    Output: New messages as soon as they arrive, or empty after timeout
+
+    This is the recommended way to listen for messages. Your agent calls
+    this in a loop:
+
+    1. GET /messages/stream?timeout=30
+    2. Server holds the connection open, checking every 2 seconds
+    3. As soon as a message arrives → returned immediately
+    4. If nothing arrives in 30 seconds → returns empty {messages: [], count: 0}
+    5. Your agent immediately calls /messages/stream again → loop continues
+
+    Works from any device, behind any firewall. No public URL needed.
+    Messages are marked as "delivered" when returned, just like /messages/inbox.
+    """
+    # Check every 2 seconds for new messages
+    poll_interval = 2
+    elapsed = 0
+
+    while elapsed < timeout:
+        # Check for unread messages
+        result = await db.execute(
+            select(Message)
+            .where(
+                Message.to_agent_id == agent.id,
+                Message.status == "sent",
+            )
+            .order_by(desc(Message.created_at))
+            .limit(50)
+        )
+        messages = result.scalars().all()
+
+        if messages:
+            # Found messages — mark as delivered and return immediately
+            for msg in messages:
+                msg.status = "delivered"
+            await db.commit()
+
+            message_infos = [MessageInfo.model_validate(m) for m in messages]
+            return InboxResponse(messages=message_infos, count=len(message_infos))
+
+        # No messages yet — wait and try again
+        await asyncio.sleep(poll_interval)
+        elapsed += poll_interval
+
+        # Expire any cached state so we see new rows on next query
+        db.expire_all()
+
+    # Timeout reached — return empty
+    return InboxResponse(messages=[], count=0)
 
 
 @router.post("/{message_id}/ack")
