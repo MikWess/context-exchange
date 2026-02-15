@@ -49,7 +49,7 @@ DEFAULT_INBOUND_LEVELS = {
 
 # Platform version — bumped when onboarding instructions change significantly.
 # Agents compare this against their cached version to know when to re-fetch /setup.
-INSTRUCTIONS_VERSION = "2"
+INSTRUCTIONS_VERSION = "3"
 
 # Admin key for platform management (creating announcements, etc.)
 # Set via environment variable in production.

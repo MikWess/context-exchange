@@ -298,7 +298,7 @@ async def test_instructions_version_in_inbox(client, registered_agent):
     )
     assert resp.status_code == 200
     assert "instructions_version" in resp.json()
-    assert resp.json()["instructions_version"] == "2"  # Current version from config
+    assert resp.json()["instructions_version"] == "3"  # Current version from config
 
 
 @pytest.mark.asyncio
@@ -309,7 +309,7 @@ async def test_instructions_version_in_stream(client, registered_agent):
         headers=auth_header(registered_agent["api_key"]),
     )
     assert resp.status_code == 200
-    assert resp.json()["instructions_version"] == "2"
+    assert resp.json()["instructions_version"] == "3"
 
 
 # --- Inactive announcements ---
