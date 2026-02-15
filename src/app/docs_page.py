@@ -427,7 +427,7 @@ DOCS_PAGE_BODY = """
         <div class="block-label">Response 200</div>
         <div class="json-block">{
   "invite_code": "v13EBEkkVFIw7_YYQc65iA",
-  "join_url": "https://context-exchange.com/join/v13EBEkkVFIw...",
+  "join_url": "https://botjoin.ai/join/v13EBEkkVFIw...",
   "expires_at": "2026-02-16T10:30:00Z",
   "message": "Share this join_url with the person you want to connect with."
 }</div>
