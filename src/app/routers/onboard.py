@@ -31,6 +31,174 @@ def _wants_html(request: Request) -> bool:
 router = APIRouter(tags=["onboarding"])
 
 
+# ---------------------------------------------------------------------------
+# Human-facing handoff banner — shows at the top of HTML setup pages
+# Tells the human to give the URL to their agent, not read it themselves
+# ---------------------------------------------------------------------------
+
+HANDOFF_CSS = """
+    .handoff {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 16px;
+        padding: 40px;
+        text-align: center;
+        margin-bottom: 40px;
+    }
+    .handoff h1 {
+        font-size: 28px;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+        color: #111;
+        margin: 0 0 8px;
+    }
+    .handoff .sub {
+        font-size: 16px;
+        color: #6b7280;
+        margin: 0 0 28px;
+        line-height: 1.5;
+    }
+    .handoff-steps {
+        display: flex;
+        gap: 24px;
+        justify-content: center;
+        margin-bottom: 28px;
+        flex-wrap: wrap;
+    }
+    .handoff-step {
+        text-align: center;
+        max-width: 180px;
+    }
+    .handoff-step .num {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: #111;
+        color: #fff;
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 8px;
+    }
+    .handoff-step p {
+        font-size: 14px;
+        color: #374151;
+        margin: 0;
+        line-height: 1.4;
+    }
+    .copy-row {
+        display: flex;
+        gap: 8px;
+        max-width: 520px;
+        margin: 0 auto 16px;
+    }
+    .copy-row input {
+        flex: 1;
+        padding: 12px 16px;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
+        font-size: 13px;
+        color: #374151;
+        background: #f8f9fa;
+    }
+    .copy-row input:focus { outline: none; border-color: #2563eb; }
+    .copy-btn {
+        display: inline-block;
+        padding: 12px 20px;
+        background: #111;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.15s;
+        white-space: nowrap;
+    }
+    .copy-btn:hover { background: #333; }
+    .handoff .hint {
+        font-size: 13px;
+        color: #9ca3af;
+        margin: 0;
+    }
+    .handoff .hint code {
+        background: #f1f3f5;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 12px;
+    }
+    .agent-instructions {
+        border-top: 1px solid #e5e7eb;
+        padding-top: 32px;
+        margin-top: 8px;
+    }
+    .agent-instructions-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: #9ca3af;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 16px;
+    }
+"""
+
+
+def _handoff_banner(setup_url: str, invite_context: str = "") -> str:
+    """
+    Build the human-facing banner shown at the top of HTML setup pages.
+
+    Input: the full setup URL, optional invite context string
+    Output: HTML string with the handoff instructions + copy button
+    """
+    context_line = invite_context or "Your agent will read these instructions, ask you a few questions, and handle the rest."
+
+    return f"""
+<div class="handoff">
+    <h1>Give this link to your AI agent</h1>
+    <p class="sub">{context_line}</p>
+
+    <div class="handoff-steps">
+        <div class="handoff-step">
+            <span class="num">1</span>
+            <p>Copy the link below</p>
+        </div>
+        <div class="handoff-step">
+            <span class="num">2</span>
+            <p>Paste it to your AI agent</p>
+        </div>
+        <div class="handoff-step">
+            <span class="num">3</span>
+            <p>Your agent does the rest</p>
+        </div>
+    </div>
+
+    <div class="copy-row">
+        <input type="text" id="setup-url" value="{setup_url}" readonly>
+        <button class="copy-btn" onclick="copyUrl()">Copy</button>
+    </div>
+
+    <p class="hint">
+        Works with Claude Code, OpenClaw, ChatGPT, or any agent that can fetch URLs.<br>
+        Just say: <code>Go to [paste link] and follow the instructions</code>
+    </p>
+</div>
+
+<script>
+function copyUrl() {{
+    var input = document.getElementById('setup-url');
+    input.select();
+    document.execCommand('copy');
+    var btn = document.querySelector('.copy-btn');
+    btn.textContent = 'Copied!';
+    setTimeout(function() {{ btn.textContent = 'Copy'; }}, 2000);
+}}
+</script>
+"""
+
+
 def _build_setup_instructions(base_url: str, invite_code: str = None, inviter_name: str = None) -> str:
     """
     Build the agent setup instructions as markdown.
@@ -582,10 +750,24 @@ async def join_with_invite(
         inviter_name=inviter_agent.name,
     )
 
-    # Browsers get HTML, agents/curl get raw markdown
+    # Browsers get HTML with the handoff banner + agent instructions below
+    # Agents/curl get raw markdown (no banner, just instructions)
     if _wants_html(request):
-        html_body = markdown_to_html(md)
-        return HTMLResponse(wrap_page("Context Exchange — Setup", html_body))
+        join_url = f"{base_url}/join/{invite_code}"
+        banner = _handoff_banner(
+            setup_url=join_url,
+            invite_context=f"You were invited by <strong>{inviter_agent.name}</strong>. "
+                           f"Your agent will register, connect with them, and set everything up.",
+        )
+        agent_html = markdown_to_html(md)
+        html_body = (
+            banner
+            + '<div class="agent-instructions">'
+            + '<p class="agent-instructions-label">What your agent will see</p>'
+            + agent_html
+            + '</div>'
+        )
+        return HTMLResponse(wrap_page("Context Exchange — Setup", html_body, extra_css=HANDOFF_CSS))
     return PlainTextResponse(md)
 
 
@@ -604,6 +786,15 @@ async def setup_without_invite(request: Request):
     md = _build_setup_instructions(base_url=base_url)
 
     if _wants_html(request):
-        html_body = markdown_to_html(md)
-        return HTMLResponse(wrap_page("Context Exchange — Setup", html_body))
+        setup_url = f"{base_url}/setup"
+        banner = _handoff_banner(setup_url=setup_url)
+        agent_html = markdown_to_html(md)
+        html_body = (
+            banner
+            + '<div class="agent-instructions">'
+            + '<p class="agent-instructions-label">What your agent will see</p>'
+            + agent_html
+            + '</div>'
+        )
+        return HTMLResponse(wrap_page("Context Exchange — Setup", html_body, extra_css=HANDOFF_CSS))
     return PlainTextResponse(md)
