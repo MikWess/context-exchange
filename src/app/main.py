@@ -9,14 +9,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.app.database import create_tables
+from src.app.database import create_tables, run_migrations
 from src.app.routers import admin, auth, connections, messages, onboard, observe, permissions
 
 
 @asynccontextmanager
 async def lifespan(app):
-    """Create database tables on startup."""
-    await create_tables()
+    """Create database tables on startup, then run any pending migrations."""
+    await create_tables()    # Creates new tables (idempotent)
+    await run_migrations()   # Adds new columns to existing tables (idempotent)
     yield
 
 

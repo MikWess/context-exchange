@@ -2,9 +2,17 @@
 Database setup — async SQLAlchemy with SQLite (dev) or Postgres (prod).
 
 get_db() is the FastAPI dependency that gives you a session per request.
+create_tables() creates new tables on startup.
+run_migrations() adds columns to existing tables that SQLAlchemy's
+create_all() won't handle (it only creates missing tables, not columns).
 """
+import logging
+
+from sqlalchemy import text, inspect
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
+
+logger = logging.getLogger(__name__)
 
 from src.app.config import DATABASE_URL
 
@@ -40,3 +48,43 @@ async def create_tables():
     """Create all tables. Called on app startup."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+
+def _get_existing_columns(conn, table_name):
+    """Get the set of column names for an existing table."""
+    insp = inspect(conn)
+    if not insp.has_table(table_name):
+        return set()
+    return {col["name"] for col in insp.get_columns(table_name)}
+
+
+async def run_migrations():
+    """
+    Add columns to existing tables that create_all() won't handle.
+
+    SQLAlchemy's create_all() only creates tables that don't exist — it won't
+    add new columns to tables that already exist. This function checks for
+    missing columns and adds them with ALTER TABLE.
+
+    Each migration is idempotent — safe to run multiple times. If the column
+    already exists, it's skipped.
+    """
+    # List of (table_name, column_name, column_sql) to ensure exist.
+    # column_sql is the SQL type + constraints for the ALTER TABLE statement.
+    migrations = [
+        ("agents", "webhook_url", "VARCHAR(500) NULL"),
+    ]
+
+    async with engine.begin() as conn:
+        for table_name, column_name, column_sql in migrations:
+            # Check if column already exists (run synchronously via run_sync)
+            existing = await conn.run_sync(
+                lambda sync_conn: _get_existing_columns(sync_conn, table_name)
+            )
+
+            if column_name not in existing:
+                stmt = f'ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}'
+                await conn.execute(text(stmt))
+                logger.info(f"Migration: added {table_name}.{column_name}")
+            else:
+                logger.debug(f"Migration: {table_name}.{column_name} already exists, skipping")
