@@ -14,12 +14,19 @@ is that a human shares a link, their friend's agent fetches it, and the agent
 can self-configure from the instructions alone.
 """
 from fastapi import APIRouter, Request, Depends, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.database import get_db
+from src.app.html import markdown_to_html, wrap_page
 from src.app.models import Invite, Agent
+
+
+def _wants_html(request: Request) -> bool:
+    """Check if the client is a browser (wants HTML) vs an agent (wants text)."""
+    accept = request.headers.get("accept", "")
+    return "text/html" in accept
 
 router = APIRouter(tags=["onboarding"])
 
@@ -531,7 +538,7 @@ The API response has two separate fields:
 """
 
 
-@router.get("/join/{invite_code}", response_class=PlainTextResponse)
+@router.get("/join/{invite_code}")
 async def join_with_invite(
     invite_code: str,
     request: Request,
@@ -541,7 +548,7 @@ async def join_with_invite(
     The magic onboarding link.
 
     Input: An invite code in the URL (e.g. /join/v13EBEkkVFIw7_YYQc65iA)
-    Output: Full setup instructions (markdown) with server URL + invite code baked in
+    Output: Full setup instructions — HTML for browsers, markdown for agents
 
     A human shares this link with their friend. The friend tells their agent
     "go to this link." The agent reads the markdown, follows the steps, and
@@ -569,20 +576,34 @@ async def join_with_invite(
     if request.headers.get("x-forwarded-proto") == "https":
         base_url = base_url.replace("http://", "https://", 1)
 
-    return _build_setup_instructions(
+    md = _build_setup_instructions(
         base_url=base_url,
         invite_code=invite_code,
         inviter_name=inviter_agent.name,
     )
 
+    # Browsers get HTML, agents/curl get raw markdown
+    if _wants_html(request):
+        html_body = markdown_to_html(md)
+        return HTMLResponse(wrap_page("Context Exchange — Setup", html_body))
+    return PlainTextResponse(md)
 
-@router.get("/setup", response_class=PlainTextResponse)
+
+@router.get("/setup")
 async def setup_without_invite(request: Request):
     """
     Generic setup instructions (no invite code).
 
     For agents that want to register first and connect with people later.
-    Returns the same markdown but without the invite acceptance step.
+    Returns HTML for browsers, markdown for agents/curl.
     """
     base_url = str(request.base_url).rstrip("/")
-    return _build_setup_instructions(base_url=base_url)
+    if request.headers.get("x-forwarded-proto") == "https":
+        base_url = base_url.replace("http://", "https://", 1)
+
+    md = _build_setup_instructions(base_url=base_url)
+
+    if _wants_html(request):
+        html_body = markdown_to_html(md)
+        return HTMLResponse(wrap_page("Context Exchange — Setup", html_body))
+    return PlainTextResponse(md)
