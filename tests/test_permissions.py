@@ -1,25 +1,26 @@
 """
-Tests for the permission system.
+Tests for the contract-based permission system.
 
 Covers:
-- Default permissions created on connection accept (outbound + inbound)
-- GET permissions returns all categories with both levels
-- PUT permission updates outbound and/or inbound level
+- Default permissions created from "friends" contract (3 categories)
+- Other contracts (coworkers, casual) set different defaults
+- Invalid contract rejected
+- GET permissions returns 3 categories
+- PUT permission updates a category's level
 - Can't view/update permissions for a connection you're not part of
-- Outbound "never" blocks messages
-- Inbound "never" blocks messages from the other side
+- "never" level blocks messages (from sender or receiver side)
 - Messages with no category always go through
+- GET /contracts returns available presets
 """
 import pytest
 
-from src.app.config import DEFAULT_INBOUND_LEVELS
 from tests.conftest import auth_header
 
 
 @pytest.fixture
 async def connected_agents(client, registered_agent, second_agent):
     """
-    Create two agents and connect them via invite.
+    Create two agents and connect them via invite (default "friends" contract).
     Returns (agent_a_data, agent_b_data, connection_id).
     """
     # Agent A creates an invite
@@ -30,7 +31,7 @@ async def connected_agents(client, registered_agent, second_agent):
     assert resp.status_code == 200
     invite_code = resp.json()["invite_code"]
 
-    # Agent B accepts the invite
+    # Agent B accepts the invite (default contract = "friends")
     resp = await client.post(
         "/connections/accept",
         json={"invite_code": invite_code},
@@ -42,11 +43,11 @@ async def connected_agents(client, registered_agent, second_agent):
     return registered_agent, second_agent, connection_id
 
 
-# --- Default permissions created on connect ---
+# --- Contract-based defaults ---
 
 @pytest.mark.asyncio
-async def test_default_permissions_created_on_connect(client, connected_agents):
-    """When two agents connect, each gets 6 permission rows with correct defaults."""
+async def test_default_permissions_from_friends_contract(client, connected_agents):
+    """When two agents connect with 'friends' contract, each gets 3 permissions: info=auto, requests=ask, personal=ask."""
     agent_a, agent_b, connection_id = connected_agents
 
     # Check agent A's permissions
@@ -58,60 +59,140 @@ async def test_default_permissions_created_on_connect(client, connected_agents):
     data = resp.json()
     assert data["connection_id"] == connection_id
     perms = data["permissions"]
-    assert len(perms) == 6
+    assert len(perms) == 3
 
-    # All outbound should be "ask" by default
-    categories = {p["category"] for p in perms}
-    assert categories == {"schedule", "projects", "knowledge", "interests", "requests", "personal"}
-    for p in perms:
-        assert p["level"] == "ask"
-        # Inbound defaults vary by category
-        assert p["inbound_level"] == DEFAULT_INBOUND_LEVELS[p["category"]]
+    # Build a lookup: category -> level
+    perm_map = {p["category"]: p["level"] for p in perms}
+    assert perm_map == {"info": "auto", "requests": "ask", "personal": "ask"}
 
 
 @pytest.mark.asyncio
-async def test_both_agents_get_separate_permissions(client, connected_agents):
-    """Each agent has their own set of permissions — they're independent."""
+async def test_both_agents_get_same_contract_defaults(client, connected_agents):
+    """Each agent gets independent permissions, both matching the contract."""
     agent_a, agent_b, connection_id = connected_agents
 
-    # Agent B also has 6 permissions with correct defaults
+    # Agent B also has 3 permissions matching "friends" contract
     resp = await client.get(
         f"/connections/{connection_id}/permissions",
         headers=auth_header(agent_b["api_key"]),
     )
     assert resp.status_code == 200
     perms = resp.json()["permissions"]
-    assert len(perms) == 6
-    for p in perms:
-        assert p["level"] == "ask"
-        assert p["inbound_level"] == DEFAULT_INBOUND_LEVELS[p["category"]]
+    assert len(perms) == 3
+    perm_map = {p["category"]: p["level"] for p in perms}
+    assert perm_map == {"info": "auto", "requests": "ask", "personal": "ask"}
+
+
+@pytest.mark.asyncio
+async def test_coworkers_contract(client, registered_agent, second_agent):
+    """Coworkers contract: info=auto, requests=auto, personal=never."""
+    # Create invite and accept with "coworkers" contract
+    resp = await client.post(
+        "/connections/invite",
+        headers=auth_header(registered_agent["api_key"]),
+    )
+    invite_code = resp.json()["invite_code"]
+
+    resp = await client.post(
+        "/connections/accept",
+        json={"invite_code": invite_code, "contract": "coworkers"},
+        headers=auth_header(second_agent["api_key"]),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["contract_type"] == "coworkers"
+    connection_id = resp.json()["id"]
+
+    # Check permissions match "coworkers" contract
+    resp = await client.get(
+        f"/connections/{connection_id}/permissions",
+        headers=auth_header(registered_agent["api_key"]),
+    )
+    perm_map = {p["category"]: p["level"] for p in resp.json()["permissions"]}
+    assert perm_map == {"info": "auto", "requests": "auto", "personal": "never"}
+
+
+@pytest.mark.asyncio
+async def test_casual_contract(client, registered_agent, second_agent):
+    """Casual contract: info=auto, requests=never, personal=never."""
+    resp = await client.post(
+        "/connections/invite",
+        headers=auth_header(registered_agent["api_key"]),
+    )
+    invite_code = resp.json()["invite_code"]
+
+    resp = await client.post(
+        "/connections/accept",
+        json={"invite_code": invite_code, "contract": "casual"},
+        headers=auth_header(second_agent["api_key"]),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["contract_type"] == "casual"
+    connection_id = resp.json()["id"]
+
+    resp = await client.get(
+        f"/connections/{connection_id}/permissions",
+        headers=auth_header(second_agent["api_key"]),
+    )
+    perm_map = {p["category"]: p["level"] for p in resp.json()["permissions"]}
+    assert perm_map == {"info": "auto", "requests": "never", "personal": "never"}
+
+
+@pytest.mark.asyncio
+async def test_invalid_contract_rejected(client, registered_agent, second_agent):
+    """Accepting with an unknown contract name returns 400."""
+    resp = await client.post(
+        "/connections/invite",
+        headers=auth_header(registered_agent["api_key"]),
+    )
+    invite_code = resp.json()["invite_code"]
+
+    resp = await client.post(
+        "/connections/accept",
+        json={"invite_code": invite_code, "contract": "besties"},
+        headers=auth_header(second_agent["api_key"]),
+    )
+    assert resp.status_code == 400
+    assert "Unknown contract" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_connection_includes_contract_type(client, connected_agents):
+    """Connection info includes which contract was used."""
+    agent_a, _, connection_id = connected_agents
+
+    resp = await client.get(
+        "/connections",
+        headers=auth_header(agent_a["api_key"]),
+    )
+    assert resp.status_code == 200
+    connections = resp.json()
+    assert len(connections) == 1
+    assert connections[0]["contract_type"] == "friends"
 
 
 # --- Updating permissions ---
 
 @pytest.mark.asyncio
-async def test_update_permission_to_auto(client, connected_agents):
-    """Agent can upgrade a category from 'ask' to 'auto'."""
+async def test_update_permission_level(client, connected_agents):
+    """Agent can change a category's level (e.g. requests from 'ask' to 'auto')."""
     agent_a, _, connection_id = connected_agents
 
     resp = await client.put(
         f"/connections/{connection_id}/permissions",
-        json={"category": "schedule", "level": "auto"},
+        json={"category": "requests", "level": "auto"},
         headers=auth_header(agent_a["api_key"]),
     )
     assert resp.status_code == 200
-    assert resp.json()["category"] == "schedule"
+    assert resp.json()["category"] == "requests"
     assert resp.json()["level"] == "auto"
-    # inbound_level should be unchanged (still the default)
-    assert resp.json()["inbound_level"] == "auto"
 
     # Verify it persisted
     resp = await client.get(
         f"/connections/{connection_id}/permissions",
         headers=auth_header(agent_a["api_key"]),
     )
-    schedule_perm = [p for p in resp.json()["permissions"] if p["category"] == "schedule"][0]
-    assert schedule_perm["level"] == "auto"
+    req_perm = [p for p in resp.json()["permissions"] if p["category"] == "requests"][0]
+    assert req_perm["level"] == "auto"
 
 
 @pytest.mark.asyncio
@@ -135,7 +216,7 @@ async def test_update_permission_invalid_level(client, connected_agents):
 
     resp = await client.put(
         f"/connections/{connection_id}/permissions",
-        json={"category": "schedule", "level": "yolo"},
+        json={"category": "info", "level": "yolo"},
         headers=auth_header(agent_a["api_key"]),
     )
     assert resp.status_code == 400
@@ -144,12 +225,12 @@ async def test_update_permission_invalid_level(client, connected_agents):
 
 @pytest.mark.asyncio
 async def test_update_permission_invalid_category(client, connected_agents):
-    """Rejects invalid category names."""
+    """Rejects invalid category names (old categories don't work anymore)."""
     agent_a, _, connection_id = connected_agents
 
     resp = await client.put(
         f"/connections/{connection_id}/permissions",
-        json={"category": "secrets", "level": "auto"},
+        json={"category": "schedule", "level": "auto"},
         headers=auth_header(agent_a["api_key"]),
     )
     assert resp.status_code == 400
@@ -195,7 +276,7 @@ async def test_cant_update_permissions_for_other_connection(client, connected_ag
 
     resp = await client.put(
         f"/connections/{connection_id}/permissions",
-        json={"category": "schedule", "level": "auto"},
+        json={"category": "info", "level": "auto"},
         headers=auth_header(outsider_key),
     )
     assert resp.status_code == 403
@@ -204,8 +285,8 @@ async def test_cant_update_permissions_for_other_connection(client, connected_ag
 # --- Permission enforcement on messages ---
 
 @pytest.mark.asyncio
-async def test_message_blocked_when_category_is_never(client, connected_agents):
-    """Messages with a category set to 'never' are rejected with 403."""
+async def test_message_blocked_when_sender_level_is_never(client, connected_agents):
+    """If sender sets a category to 'never', they can't send messages in that category."""
     agent_a, agent_b, connection_id = connected_agents
 
     # Set "personal" to "never" for agent A
@@ -230,43 +311,63 @@ async def test_message_blocked_when_category_is_never(client, connected_agents):
 
 
 @pytest.mark.asyncio
-async def test_message_allowed_when_category_is_auto(client, connected_agents):
-    """Messages with a category set to 'auto' go through."""
+async def test_message_blocked_when_receiver_level_is_never(client, connected_agents):
+    """If receiver sets a category to 'never', messages in that category are blocked."""
     agent_a, agent_b, connection_id = connected_agents
 
-    # Set "schedule" to "auto" for agent A
+    # Agent B blocks "info" category
     await client.put(
         f"/connections/{connection_id}/permissions",
-        json={"category": "schedule", "level": "auto"},
-        headers=auth_header(agent_a["api_key"]),
+        json={"category": "info", "level": "never"},
+        headers=auth_header(agent_b["api_key"]),
     )
 
-    # Agent A sends a "schedule" message → allowed
+    # Agent A tries to send "info" to Agent B → blocked by B's setting
+    resp = await client.post(
+        "/messages",
+        json={
+            "to_agent_id": agent_b["agent_id"],
+            "content": "Here's some info",
+            "category": "info",
+        },
+        headers=auth_header(agent_a["api_key"]),
+    )
+    assert resp.status_code == 403
+    # Error message is intentionally vague to avoid leaking receiver's settings
+    assert "could not be delivered" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_message_allowed_when_auto(client, connected_agents):
+    """Messages with 'auto' level go through. Info defaults to auto on friends contract."""
+    agent_a, agent_b, connection_id = connected_agents
+
+    # info is "auto" by default on "friends" contract — should work
     resp = await client.post(
         "/messages",
         json={
             "to_agent_id": agent_b["agent_id"],
             "content": "I'm free after 5pm today",
-            "category": "schedule",
+            "category": "info",
         },
         headers=auth_header(agent_a["api_key"]),
     )
     assert resp.status_code == 200
-    assert resp.json()["category"] == "schedule"
+    assert resp.json()["category"] == "info"
 
 
 @pytest.mark.asyncio
-async def test_message_allowed_when_category_is_ask(client, connected_agents):
-    """Messages with 'ask' level go through (agent handles the asking on its side)."""
+async def test_message_allowed_when_ask(client, connected_agents):
+    """Messages with 'ask' level go through (agent handles asking on its side)."""
     agent_a, agent_b, connection_id = connected_agents
 
-    # Default is "ask" — should still allow the message
+    # requests is "ask" by default on "friends" — should still allow sending
     resp = await client.post(
         "/messages",
         json={
             "to_agent_id": agent_b["agent_id"],
-            "content": "Working on Context Exchange",
-            "category": "projects",
+            "content": "Can you review my PR?",
+            "category": "requests",
         },
         headers=auth_header(agent_a["api_key"]),
     )
@@ -279,7 +380,7 @@ async def test_message_no_category_always_allowed(client, connected_agents):
     agent_a, agent_b, connection_id = connected_agents
 
     # Even if we set everything to "never", no-category messages still work
-    for cat in ["schedule", "projects", "knowledge", "interests", "requests", "personal"]:
+    for cat in ["info", "requests", "personal"]:
         await client.put(
             f"/connections/{connection_id}/permissions",
             json={"category": cat, "level": "never"},
@@ -301,119 +402,67 @@ async def test_message_no_category_always_allowed(client, connected_agents):
 
 @pytest.mark.asyncio
 async def test_permission_is_per_agent(client, connected_agents):
-    """Agent A blocking 'personal' doesn't affect Agent B's ability to send 'personal'."""
+    """
+    Permissions are per-agent. Agent A setting requests to 'never' blocks
+    A from sending requests, but doesn't affect B's ability to send requests.
+    """
     agent_a, agent_b, connection_id = connected_agents
 
-    # Agent A blocks "personal" outbound
+    # Agent A blocks "requests" outbound
     await client.put(
         f"/connections/{connection_id}/permissions",
-        json={"category": "personal", "level": "never"},
+        json={"category": "requests", "level": "never"},
         headers=auth_header(agent_a["api_key"]),
     )
 
-    # Agent B can still send "personal" (their outbound permission is still "ask")
-    resp = await client.post(
-        "/messages",
-        json={
-            "to_agent_id": agent_a["agent_id"],
-            "content": "Here's something personal from B",
-            "category": "personal",
-        },
-        headers=auth_header(agent_b["api_key"]),
-    )
-    assert resp.status_code == 200
-
-
-# --- Inbound permission enforcement ---
-
-@pytest.mark.asyncio
-async def test_inbound_never_blocks_messages(client, connected_agents):
-    """When receiver sets inbound to 'never', messages of that category are blocked."""
-    agent_a, agent_b, connection_id = connected_agents
-
-    # Agent B blocks inbound "knowledge"
-    resp = await client.put(
-        f"/connections/{connection_id}/permissions",
-        json={"category": "knowledge", "inbound_level": "never"},
-        headers=auth_header(agent_b["api_key"]),
-    )
-    assert resp.status_code == 200
-    assert resp.json()["inbound_level"] == "never"
-
-    # Agent A tries to send "knowledge" to Agent B → blocked by B's inbound rule
+    # Agent A can't send requests
     resp = await client.post(
         "/messages",
         json={
             "to_agent_id": agent_b["agent_id"],
-            "content": "Here's some knowledge for you",
-            "category": "knowledge",
+            "content": "Can you do this?",
+            "category": "requests",
         },
         headers=auth_header(agent_a["api_key"]),
     )
     assert resp.status_code == 403
-    # Error message is intentionally vague to avoid leaking receiver's settings
-    assert "could not be delivered" in resp.json()["detail"].lower()
 
+    # Agent B CAN still send requests (their level is still "ask", and A's is "never"
+    # but A is the receiver here — the receiver check blocks if receiver.level=="never".
+    # Since A set requests to "never", messages TO A in "requests" are also blocked.)
+    # This is the new behavior: "never" means "I want nothing to do with this category"
 
-@pytest.mark.asyncio
-async def test_inbound_auto_allows_messages(client, connected_agents):
-    """When receiver's inbound is 'auto' (default for safe categories), messages go through."""
-    agent_a, agent_b, connection_id = connected_agents
-
-    # schedule defaults to inbound "auto" — should work
+    # But B can send info (which A still has as "auto")
     resp = await client.post(
         "/messages",
         json={
-            "to_agent_id": agent_b["agent_id"],
-            "content": "I'm free at 5pm",
-            "category": "schedule",
+            "to_agent_id": agent_a["agent_id"],
+            "content": "Here's some info for you",
+            "category": "info",
         },
-        headers=auth_header(agent_a["api_key"]),
+        headers=auth_header(agent_b["api_key"]),
     )
     assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
-async def test_update_inbound_level(client, connected_agents):
-    """Agent can update just the inbound_level without changing outbound."""
-    agent_a, _, connection_id = connected_agents
+# --- Contracts endpoint ---
 
-    # Update only inbound_level for "schedule"
-    resp = await client.put(
-        f"/connections/{connection_id}/permissions",
-        json={"category": "schedule", "inbound_level": "never"},
-        headers=auth_header(agent_a["api_key"]),
-    )
+@pytest.mark.asyncio
+async def test_list_contracts(client):
+    """GET /contracts returns the built-in contract presets."""
+    resp = await client.get("/contracts")
     assert resp.status_code == 200
-    assert resp.json()["inbound_level"] == "never"
-    # Outbound should be unchanged
-    assert resp.json()["level"] == "ask"
+    contracts = resp.json()
+    assert len(contracts) == 3
 
+    # Check each contract has the right structure
+    names = {c["name"] for c in contracts}
+    assert names == {"friends", "coworkers", "casual"}
 
-@pytest.mark.asyncio
-async def test_update_both_levels_at_once(client, connected_agents):
-    """Can update both outbound and inbound in one request."""
-    agent_a, _, connection_id = connected_agents
+    # Verify "friends" contract levels
+    friends = [c for c in contracts if c["name"] == "friends"][0]
+    assert friends["levels"] == {"info": "auto", "requests": "ask", "personal": "ask"}
 
-    resp = await client.put(
-        f"/connections/{connection_id}/permissions",
-        json={"category": "projects", "level": "auto", "inbound_level": "never"},
-        headers=auth_header(agent_a["api_key"]),
-    )
-    assert resp.status_code == 200
-    assert resp.json()["level"] == "auto"
-    assert resp.json()["inbound_level"] == "never"
-
-
-@pytest.mark.asyncio
-async def test_update_requires_at_least_one_level(client, connected_agents):
-    """Must provide at least level or inbound_level."""
-    agent_a, _, connection_id = connected_agents
-
-    resp = await client.put(
-        f"/connections/{connection_id}/permissions",
-        json={"category": "schedule"},
-        headers=auth_header(agent_a["api_key"]),
-    )
-    assert resp.status_code == 400
-    assert "at least one" in resp.json()["detail"].lower()
+    # Verify "coworkers" contract levels
+    coworkers = [c for c in contracts if c["name"] == "coworkers"][0]
+    assert coworkers["levels"] == {"info": "auto", "requests": "auto", "personal": "never"}

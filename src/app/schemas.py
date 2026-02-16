@@ -87,6 +87,7 @@ class InviteCreateResponse(BaseModel):
 class InviteAcceptRequest(BaseModel):
     """Another agent sends this to accept an invite."""
     invite_code: str
+    contract: str = Field("friends", description="Permission preset: friends, coworkers, or casual")
 
 
 class ConnectionInfo(BaseModel):
@@ -94,6 +95,7 @@ class ConnectionInfo(BaseModel):
     id: str
     connected_agent: AgentInfo
     status: str
+    contract_type: str = "friends"
     created_at: datetime
 
 
@@ -172,10 +174,9 @@ class ThreadDetail(BaseModel):
 # --- Permissions ---
 
 class PermissionInfo(BaseModel):
-    """A single permission: outbound + inbound levels for one category on one connection."""
+    """A single permission: one category's level for one agent on one connection."""
     category: str
-    level: str  # outbound: auto, ask, never
-    inbound_level: str  # inbound: auto, ask, never
+    level: str  # auto, ask, never
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -188,9 +189,14 @@ class PermissionListResponse(BaseModel):
 
 class PermissionUpdateRequest(BaseModel):
     """Update the permission level for one category."""
-    category: str = Field(description="Context category: schedule, projects, knowledge, interests, requests, personal")
-    level: Optional[str] = Field(None, description="Outbound permission level: auto, ask, or never")
-    inbound_level: Optional[str] = Field(None, description="Inbound permission level: auto, ask, or never")
+    category: str = Field(description="Context category: info, requests, or personal")
+    level: str = Field(description="Permission level: auto, ask, or never")
+
+
+class ContractInfo(BaseModel):
+    """A permission preset showing what each category defaults to."""
+    name: str
+    levels: dict  # {"info": "auto", "requests": "ask", "personal": "ask"}
 
 
 # --- Admin ---

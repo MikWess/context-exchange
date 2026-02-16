@@ -14,7 +14,7 @@ from sqlalchemy import select, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.auth import get_current_agent
-from src.app.config import INVITE_EXPIRE_HOURS, DEFAULT_CATEGORIES, DEFAULT_PERMISSION_LEVEL, DEFAULT_INBOUND_LEVELS
+from src.app.config import INVITE_EXPIRE_HOURS, BUILT_IN_CONTRACTS, DEFAULT_CONTRACT
 from src.app.database import get_db
 from src.app.models import Agent, Invite, Connection, Permission
 from src.app.schemas import (
@@ -114,29 +114,37 @@ async def accept_invite(
     if existing:
         raise HTTPException(status_code=400, detail="Already connected with this agent")
 
+    # Validate the contract name
+    contract_name = req.contract if req.contract else DEFAULT_CONTRACT
+    if contract_name not in BUILT_IN_CONTRACTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown contract '{contract_name}'. Options: {', '.join(BUILT_IN_CONTRACTS)}",
+        )
+    contract_levels = BUILT_IN_CONTRACTS[contract_name]
+
     # Mark invite as used
     invite.used = True
     invite.used_by_agent_id = agent.id
 
-    # Create the connection
+    # Create the connection with the chosen contract
     connection = Connection(
         agent_a_id=invite.from_agent_id,
         agent_b_id=agent.id,
+        contract_type=contract_name,
     )
     db.add(connection)
     await db.flush()
 
-    # Create default permissions for both agents
-    # Outbound: all start as "ask" (agent must check with human before sharing)
-    # Inbound: varies by category (safe categories = "auto", sensitive = "ask")
+    # Create permissions for both agents from the contract preset.
+    # Both agents get the same starting levels — either can customize later.
     for agent_id in (invite.from_agent_id, agent.id):
-        for category in DEFAULT_CATEGORIES:
+        for category, level in contract_levels.items():
             perm = Permission(
                 connection_id=connection.id,
                 agent_id=agent_id,
                 category=category,
-                level=DEFAULT_PERMISSION_LEVEL,
-                inbound_level=DEFAULT_INBOUND_LEVELS.get(category, "ask"),
+                level=level,
             )
             db.add(perm)
     await db.flush()
@@ -151,6 +159,7 @@ async def accept_invite(
         id=connection.id,
         connected_agent=AgentInfo.model_validate(other_agent),
         status=connection.status,
+        contract_type=connection.contract_type,
         created_at=connection.created_at,
     )
 
@@ -192,6 +201,7 @@ async def list_connections(
                 id=conn.id,
                 connected_agent=AgentInfo.model_validate(other_agent),
                 status=conn.status,
+                contract_type=conn.contract_type or "friends",
                 created_at=conn.created_at,
             )
         )

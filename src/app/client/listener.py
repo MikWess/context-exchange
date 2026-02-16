@@ -144,13 +144,10 @@ def refresh_connections(config):
             perm_resp = api_request(
                 f"{base}/connections/{conn['id']}/permissions", config
             )
-            # Build a dict: category -> {level, inbound_level}
+            # Build a dict: category -> level (e.g. {"info": "auto", "requests": "ask"})
             perms = {}
             for p in perm_resp.get("permissions", []):
-                perms[p["category"]] = {
-                    "level": p["level"],
-                    "inbound_level": p["inbound_level"],
-                }
+                perms[p["category"]] = p["level"]
         except Exception as e:
             log.warning(f"Failed to fetch permissions for connection {conn['id']}: {e}")
             perms = {}
@@ -205,10 +202,9 @@ def should_auto_respond(message, config):
         return False
 
     perms = conn_info.get("permissions", {})
-    cat_perm = perms.get(category, {})
 
-    # "auto" outbound means we're authorized to respond freely
-    return cat_perm.get("level") == "auto"
+    # "auto" means we're authorized to respond freely
+    return perms.get(category) == "auto"
 
 # ---------------------------------------------------------------------------
 # Auto-respond — invoke the user's agent via subprocess

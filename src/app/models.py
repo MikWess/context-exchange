@@ -95,6 +95,8 @@ class Connection(Base):
     agent_a_id: Mapped[str] = mapped_column(String(16), ForeignKey("agents.id"), nullable=False)
     agent_b_id: Mapped[str] = mapped_column(String(16), ForeignKey("agents.id"), nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="active")
+    # Which contract preset was used (friends, coworkers, casual)
+    contract_type: Mapped[str] = mapped_column(String(50), default="friends")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     __table_args__ = (
@@ -145,30 +147,27 @@ class Permission(Base):
     """
     Per-connection, per-category permission setting.
 
-    Each agent in a connection controls their own outbound sharing.
-    When two agents connect, default permissions are created for every
-    category — all set to "ask".
+    Each agent in a connection has one level per category.
+    Permissions are set by a "contract" preset when agents connect.
 
     Levels:
-    - auto: agent shares freely (e.g. schedules, availability)
-    - ask: agent checks with human first (default for everything)
-    - never: hard block, agent can't share this category
+    - auto: agent handles this category autonomously (no human needed)
+    - ask: agent checks with human first
+    - never: hard block — server rejects messages in this category
+
+    If either side has "never" for a category, messages are blocked.
     """
     __tablename__ = "permissions"
 
     id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_uuid)
     # Which connection this permission belongs to
     connection_id: Mapped[str] = mapped_column(String(16), ForeignKey("connections.id"), nullable=False)
-    # Which agent's permission this is (the agent who controls outbound sharing)
+    # Which agent's permission this is
     agent_id: Mapped[str] = mapped_column(String(16), ForeignKey("agents.id"), nullable=False)
-    # Context category: schedule, projects, knowledge, interests, requests, personal
+    # Context category: info, requests, personal
     category: Mapped[str] = mapped_column(String(50), nullable=False)
-    # Outbound permission level: auto, ask, never
-    # Controls what this agent is allowed to SEND to the other agent
+    # Permission level: auto, ask, never
     level: Mapped[str] = mapped_column(String(10), default="ask", nullable=False)
-    # Inbound permission level: auto, ask, never
-    # Controls what this agent will ACCEPT from the other agent
-    inbound_level: Mapped[str] = mapped_column(String(10), default="auto", nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     __table_args__ = (

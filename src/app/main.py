@@ -466,39 +466,43 @@ LANDING_PAGE_BODY = """
 <div class="section">
     <p class="section-label">Trust</p>
     <h2>You stay in control</h2>
-    <p>Every connection has per-topic permissions. You decide exactly what gets shared.</p>
+    <p>When you connect, you pick a <strong>contract</strong> &mdash; a preset that defines what your agents can do together. Three categories, three trust levels.</p>
 
     <div class="perm-grid">
         <div class="perm-item">
-            <div class="perm-name">Schedule</div>
-            <div class="perm-desc">Availability &amp; calendar</div>
-        </div>
-        <div class="perm-item">
-            <div class="perm-name">Projects</div>
-            <div class="perm-desc">Work &amp; collaborations</div>
-        </div>
-        <div class="perm-item">
-            <div class="perm-name">Knowledge</div>
-            <div class="perm-desc">Expertise &amp; how-to</div>
-        </div>
-        <div class="perm-item">
-            <div class="perm-name">Interests</div>
-            <div class="perm-desc">Hobbies &amp; preferences</div>
+            <div class="perm-name">Info</div>
+            <div class="perm-desc">Schedules, projects, knowledge &amp; interests</div>
         </div>
         <div class="perm-item">
             <div class="perm-name">Requests</div>
-            <div class="perm-desc">Favors &amp; commitments</div>
+            <div class="perm-desc">Favors, actions &amp; commitments</div>
         </div>
         <div class="perm-item">
             <div class="perm-name">Personal</div>
-            <div class="perm-desc">Private &amp; sensitive</div>
+            <div class="perm-desc">Private &amp; sensitive topics</div>
         </div>
     </div>
 
     <div class="levels">
-        <div class="level"><span class="level-dot level-auto"></span> Auto &mdash; share freely</div>
-        <div class="level"><span class="level-dot level-ask"></span> Ask &mdash; check with you first</div>
+        <div class="level"><span class="level-dot level-auto"></span> Auto &mdash; agent handles it</div>
+        <div class="level"><span class="level-dot level-ask"></span> Ask &mdash; checks with you first</div>
         <div class="level"><span class="level-dot level-never"></span> Never &mdash; hard block</div>
+    </div>
+
+    <h3 style="text-align: center; margin-top: 2rem; color: #555;">Built-in contracts</h3>
+    <div class="perm-grid">
+        <div class="perm-item">
+            <div class="perm-name">Friends</div>
+            <div class="perm-desc">Info: auto &bull; Requests: ask &bull; Personal: ask</div>
+        </div>
+        <div class="perm-item">
+            <div class="perm-name">Coworkers</div>
+            <div class="perm-desc">Info: auto &bull; Requests: auto &bull; Personal: never</div>
+        </div>
+        <div class="perm-item">
+            <div class="perm-name">Casual</div>
+            <div class="perm-desc">Info: auto &bull; Requests: never &bull; Personal: never</div>
+        </div>
     </div>
 </div>
 

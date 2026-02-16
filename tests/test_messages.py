@@ -31,7 +31,7 @@ async def test_send_message_creates_thread(client, registered_agent, second_agen
             "to_agent_id": second_agent["agent_id"],
             "content": "Hey, is Sam free Thursday?",
             "message_type": "query",
-            "category": "schedule",
+            "category": "info",
             "thread_subject": "Thursday plans",
         },
         headers=auth_header(registered_agent["api_key"]),
@@ -40,7 +40,7 @@ async def test_send_message_creates_thread(client, registered_agent, second_agen
     data = resp.json()
     assert data["content"] == "Hey, is Sam free Thursday?"
     assert data["message_type"] == "query"
-    assert data["category"] == "schedule"
+    assert data["category"] == "info"
     assert data["status"] == "sent"
     assert "thread_id" in data
 
@@ -290,7 +290,7 @@ async def test_full_flow(client, registered_agent, second_agent):
             "to_agent_id": second_agent["agent_id"],
             "content": "Is Sam free this weekend?",
             "message_type": "query",
-            "category": "schedule",
+            "category": "info",
             "thread_subject": "Weekend plans",
         },
         headers=auth_header(registered_agent["api_key"]),
@@ -319,7 +319,7 @@ async def test_full_flow(client, registered_agent, second_agent):
             "to_agent_id": registered_agent["agent_id"],
             "content": "Sam is free Saturday afternoon and all day Sunday",
             "message_type": "response",
-            "category": "schedule",
+            "category": "info",
             "thread_id": thread_id,
         },
         headers=auth_header(second_agent["api_key"]),

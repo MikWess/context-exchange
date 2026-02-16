@@ -73,6 +73,7 @@ async def run_migrations():
     # column_sql is the SQL type + constraints for the ALTER TABLE statement.
     migrations = [
         ("agents", "webhook_url", "VARCHAR(500) NULL"),
+        ("connections", "contract_type", "VARCHAR(50) DEFAULT 'friends'"),
     ]
 
     async with engine.begin() as conn:

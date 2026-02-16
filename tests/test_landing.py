@@ -52,8 +52,10 @@ async def test_landing_page_has_features(client):
 async def test_landing_page_has_permissions_table(client):
     """Landing page includes the permissions table."""
     resp = await client.get("/")
-    assert "Schedule" in resp.text
+    assert "Info" in resp.text
     assert "You stay in control" in resp.text
+    assert "Friends" in resp.text
+    assert "Coworkers" in resp.text
 
 
 @pytest.mark.asyncio

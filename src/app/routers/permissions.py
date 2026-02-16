@@ -3,20 +3,21 @@ Permission router — view and update per-connection, per-category sharing rules
 
 GET  /connections/{id}/permissions  → List all permission settings for a connection
 PUT  /connections/{id}/permissions  → Update one category's permission level
+GET  /contracts                    → List available contract presets
 
-Each agent controls their own outbound sharing. When you check permissions,
-you see YOUR settings for that connection. When you update, you're changing
-YOUR own sharing rules — not the other agent's.
+Each agent controls their own permission level per category.
+If either side has "never" for a category, messages in that category are blocked.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.auth import get_current_agent
-from src.app.config import DEFAULT_CATEGORIES, VALID_PERMISSION_LEVELS
+from src.app.config import DEFAULT_CATEGORIES, VALID_PERMISSION_LEVELS, BUILT_IN_CONTRACTS
 from src.app.database import get_db
 from src.app.models import Agent, Connection, Permission
 from src.app.schemas import (
+    ContractInfo,
     PermissionInfo,
     PermissionListResponse,
     PermissionUpdateRequest,
@@ -41,9 +42,9 @@ async def get_permissions(
     Get all permission settings for a connection.
 
     Input: connection_id in URL + API key
-    Output: List of {category, level, inbound_level} for every category
+    Output: List of {category, level} for every category (info, requests, personal)
 
-    Shows YOUR outbound and inbound rules for this connection.
+    Shows YOUR permission levels for this connection.
     """
     # Verify connection exists
     result = await db.execute(
@@ -81,32 +82,17 @@ async def update_permission(
     """
     Update a permission level for one category.
 
-    Input: connection_id in URL + {category, level?, inbound_level?} in body + API key
+    Input: connection_id in URL + {category, level} in body + API key
     Output: The updated permission
 
-    Changes YOUR outbound and/or inbound rules for this category.
-    Valid levels: auto (share freely), ask (check with human), never (blocked).
-    At least one of level or inbound_level must be provided.
+    Changes YOUR permission level for this category on this connection.
+    Valid levels: auto (handle autonomously), ask (check with human), never (blocked).
     """
-    # Must update at least one field
-    if req.level is None and req.inbound_level is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Must provide at least one of: level, inbound_level",
-        )
-
-    # Validate outbound level if provided
-    if req.level is not None and req.level not in VALID_PERMISSION_LEVELS:
+    # Validate the level
+    if req.level not in VALID_PERMISSION_LEVELS:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid level '{req.level}'. Must be one of: {', '.join(sorted(VALID_PERMISSION_LEVELS))}",
-        )
-
-    # Validate inbound level if provided
-    if req.inbound_level is not None and req.inbound_level not in VALID_PERMISSION_LEVELS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid inbound_level '{req.inbound_level}'. Must be one of: {', '.join(sorted(VALID_PERMISSION_LEVELS))}",
         )
 
     # Validate the category
@@ -142,10 +128,24 @@ async def update_permission(
             detail=f"Permission for category '{req.category}' not found",
         )
 
-    # Update whichever fields were provided
-    if req.level is not None:
-        permission.level = req.level
-    if req.inbound_level is not None:
-        permission.inbound_level = req.inbound_level
+    # Update the level
+    permission.level = req.level
 
     return PermissionInfo.model_validate(permission)
+
+
+@router.get("/contracts", response_model=list[ContractInfo])
+async def list_contracts():
+    """
+    List available permission contracts (presets).
+
+    Input: none (no auth required)
+    Output: List of contract names with their category levels
+
+    Contracts are permission presets applied when two agents connect.
+    Each contract defines a default level for each category (info, requests, personal).
+    """
+    return [
+        ContractInfo(name=name, levels=levels)
+        for name, levels in BUILT_IN_CONTRACTS.items()
+    ]

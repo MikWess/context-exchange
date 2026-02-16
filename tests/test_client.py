@@ -88,4 +88,4 @@ async def test_instructions_version_bumped(client, registered_agent):
         "/messages/inbox",
         headers=auth_header(registered_agent["api_key"]),
     )
-    assert resp.json()["instructions_version"] == "3"
+    assert resp.json()["instructions_version"] == "4"

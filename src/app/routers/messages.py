@@ -149,10 +149,11 @@ async def send_message(
     # Verify connection
     connection = await _verify_connection(agent.id, req.to_agent_id, db)
 
-    # Check permissions — if the message has a category, verify the sender
-    # is allowed to share that category on this connection.
+    # Check permissions — if the message has a category, verify both sides
+    # allow it. If either side has "never", the message is blocked.
     # Messages with no category (plain text chat) always go through.
     if req.category:
+        # Sender's permission — are they allowed to send this category?
         result = await db.execute(
             select(Permission).where(
                 Permission.connection_id == connection.id,
@@ -160,15 +161,14 @@ async def send_message(
                 Permission.category == req.category,
             )
         )
-        permission = result.scalar_one_or_none()
-        # If permission exists and is "never", block the message
-        if permission and permission.level == "never":
+        sender_perm = result.scalar_one_or_none()
+        if sender_perm and sender_perm.level == "never":
             raise HTTPException(
                 status_code=403,
                 detail=f"You don't have permission to share {req.category} with this connection",
             )
 
-        # Inbound check — does the RECEIVER accept this category?
+        # Receiver's permission — have they blocked this category?
         result = await db.execute(
             select(Permission).where(
                 Permission.connection_id == connection.id,
@@ -176,8 +176,8 @@ async def send_message(
                 Permission.category == req.category,
             )
         )
-        inbound_perm = result.scalar_one_or_none()
-        if inbound_perm and inbound_perm.inbound_level == "never":
+        receiver_perm = result.scalar_one_or_none()
+        if receiver_perm and receiver_perm.level == "never":
             # Vague error — don't reveal the receiver's permission settings
             raise HTTPException(
                 status_code=403,

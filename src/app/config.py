@@ -29,27 +29,24 @@ API_KEY_PREFIX = "cex_"
 # Invite codes expire after this many hours
 INVITE_EXPIRE_HOURS = int(os.getenv("INVITE_EXPIRE_HOURS", "72"))
 
-# Permission system — categories of context agents can share
-# When two agents connect, one Permission row is created per category per agent.
-DEFAULT_CATEGORIES = ["schedule", "projects", "knowledge", "interests", "requests", "personal"]
-DEFAULT_PERMISSION_LEVEL = "ask"  # auto = share freely, ask = check with human, never = blocked
+# Permission system — 3 categories of context agents can share.
+# When two agents connect, permissions are set by a "contract" preset.
+DEFAULT_CATEGORIES = ["info", "requests", "personal"]
 VALID_PERMISSION_LEVELS = {"auto", "ask", "never"}
 
-# Inbound defaults — what the agent accepts FROM other agents, per category.
-# Safe categories (schedule, projects, etc.) default to "auto" (accept freely).
-# Sensitive categories (requests, personal) default to "ask" (check with human first).
-DEFAULT_INBOUND_LEVELS = {
-    "schedule": "auto",
-    "projects": "auto",
-    "knowledge": "auto",
-    "interests": "auto",
-    "requests": "ask",
-    "personal": "ask",
+# Contracts — named permission presets applied at connection time.
+# Each contract maps category -> level. Both agents get the same preset.
+# "friends" is the default — agents can exchange info autonomously right away.
+BUILT_IN_CONTRACTS = {
+    "friends": {"info": "auto", "requests": "ask", "personal": "ask"},
+    "coworkers": {"info": "auto", "requests": "auto", "personal": "never"},
+    "casual": {"info": "auto", "requests": "never", "personal": "never"},
 }
+DEFAULT_CONTRACT = "friends"
 
 # Platform version — bumped when onboarding instructions change significantly.
 # Agents compare this against their cached version to know when to re-fetch /setup.
-INSTRUCTIONS_VERSION = "3"
+INSTRUCTIONS_VERSION = "4"
 
 # Admin key for platform management (creating announcements, etc.)
 # Set via environment variable in production.
