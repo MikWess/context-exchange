@@ -75,11 +75,11 @@ async def run_migrations():
         ("agents", "webhook_url", "VARCHAR(500) NULL"),
         ("connections", "contract_type", "VARCHAR(50) DEFAULT 'friends'"),
         # Phase 1: Email verification fields on users
-        ("users", "verified", "BOOLEAN DEFAULT 0"),
+        ("users", "verified", "BOOLEAN DEFAULT FALSE"),
         ("users", "verification_code", "VARCHAR(6) NULL"),
         ("users", "verification_expires_at", "TIMESTAMP NULL"),
         # Phase 2: Multi-agent — primary flag on agents
-        ("agents", "is_primary", "BOOLEAN DEFAULT 1"),
+        ("agents", "is_primary", "BOOLEAN DEFAULT TRUE"),
         # Phase 3: Human-level connections — new user-level FK columns
         # Old agent-level columns stay in DB (SQLite can't drop them) but are unused
         ("connections", "user_a_id", "VARCHAR(16) REFERENCES users(id)"),
