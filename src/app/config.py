@@ -48,6 +48,12 @@ DEFAULT_CONTRACT = "friends"
 # Agents compare this against their cached version to know when to re-fetch /setup.
 INSTRUCTIONS_VERSION = "4"
 
+# --- Environment Detection ---
+# True when running against Postgres (Railway prod). Used to prevent
+# dev-mode behaviors (like returning verification codes in responses)
+# from ever leaking in production.
+IS_PRODUCTION = "postgresql" in _raw_db_url or "postgres" in _raw_db_url
+
 # --- Email Verification ---
 # Verification codes expire after this many minutes
 EMAIL_VERIFICATION_EXPIRE_MINUTES = int(os.getenv("EMAIL_VERIFICATION_EXPIRE_MINUTES", "10"))

@@ -29,9 +29,9 @@ from sqlalchemy import select, or_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.auth import verify_api_key, decode_jwt_token, create_jwt_token, API_KEY_PREFIX
-from src.app.config import EMAIL_VERIFICATION_EXPIRE_MINUTES, RESEND_API_KEY
+from src.app.config import EMAIL_VERIFICATION_EXPIRE_MINUTES
 from src.app.database import get_db
-from src.app.email import generate_verification_code, send_verification_email
+from src.app.email import generate_verification_code, is_dev_mode, send_verification_email
 from src.app.models import Agent, User, Connection, Thread, Message, utcnow
 
 router = APIRouter(tags=["observe"])
@@ -281,7 +281,7 @@ async def observe_login(
 
     # In dev mode, show the code as a message
     message = ""
-    if not RESEND_API_KEY:
+    if is_dev_mode():
         message = f"Dev mode — your code is: {code}"
 
     return HTMLResponse(_login_page_html(
@@ -408,7 +408,7 @@ async def observe_register(
 
     # In dev mode, show the code in the page
     message = ""
-    if not RESEND_API_KEY:
+    if is_dev_mode():
         message = f"Dev mode — your code is: {code}"
 
     return HTMLResponse(_login_page_html(

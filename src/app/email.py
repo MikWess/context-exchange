@@ -11,9 +11,19 @@ import string
 
 import httpx
 
-from src.app.config import RESEND_API_KEY, EMAIL_FROM
+from src.app.config import IS_PRODUCTION, RESEND_API_KEY, EMAIL_FROM
 
 logger = logging.getLogger(__name__)
+
+
+def is_dev_mode() -> bool:
+    """
+    True when running locally (SQLite, no Resend key).
+    In dev mode, verification codes are returned in responses so you
+    can test without real email. NEVER true in production — even if
+    RESEND_API_KEY is missing, codes stay hidden.
+    """
+    return not IS_PRODUCTION and not RESEND_API_KEY
 
 
 def generate_verification_code() -> str:

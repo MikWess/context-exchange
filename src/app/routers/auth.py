@@ -24,9 +24,9 @@ from src.app.auth import (
     get_current_agent,
     get_current_user_flexible,
 )
-from src.app.config import EMAIL_VERIFICATION_EXPIRE_MINUTES, RESEND_API_KEY
+from src.app.config import EMAIL_VERIFICATION_EXPIRE_MINUTES
 from src.app.database import get_db
-from src.app.email import generate_verification_code, send_verification_email
+from src.app.email import generate_verification_code, is_dev_mode, send_verification_email
 from src.app.models import User, Agent, utcnow
 from src.app.schemas import (
     RegisterRequest,
@@ -109,8 +109,9 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
     Creates an unverified user. The agent must then call /auth/verify
     with the code to complete registration and get an API key.
 
-    In dev mode (no RESEND_API_KEY), the code is included in the response
-    so agents can auto-verify without real email.
+    In local dev mode (SQLite + no RESEND_API_KEY), the code is included
+    in the response so agents can auto-verify without real email.
+    In production this NEVER happens, even if Resend isn't configured.
     """
     # Check if email already registered
     result = await db.execute(select(User).where(User.email == req.email))
@@ -149,7 +150,7 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
 
     # In dev mode (no Resend key), include the code so agents can auto-verify
     message = "Verification code sent to your email. Call /auth/verify with the code to complete registration."
-    if not RESEND_API_KEY:
+    if is_dev_mode():
         message = f"Dev mode — your verification code is: {code}. Call /auth/verify to complete registration."
 
     return RegisterPendingResponse(
@@ -272,7 +273,7 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
 
     # In dev mode, include the code for testing
     message = "Verification code sent to your email. Call /auth/login/verify with the code."
-    if not RESEND_API_KEY:
+    if is_dev_mode():
         message = f"Dev mode — your verification code is: {code}. Call /auth/login/verify to get your JWT."
 
     return LoginPendingResponse(message=message)
@@ -469,7 +470,7 @@ async def recover(req: RecoverRequest, db: AsyncSession = Depends(get_db)):
 
     # In dev mode (no Resend key), include the code so agents can auto-recover
     message = "Verification code sent to your email. Call /auth/recover/verify with the code."
-    if not RESEND_API_KEY:
+    if is_dev_mode():
         message = f"Dev mode — your verification code is: {code}. Call /auth/recover/verify to get your API key."
 
     return {"message": message}
