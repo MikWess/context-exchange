@@ -66,33 +66,50 @@ async def client(db_session):
     app.dependency_overrides.clear()
 
 
+async def _register_and_verify(client, email, name, agent_name, framework):
+    """
+    Helper: go through the 2-step registration flow (register → verify).
+    In test mode (no RESEND_API_KEY), the verification code is in the response message.
+    Returns the verify response JSON (user_id, agent_id, api_key).
+    """
+    # Step 1: Register — get the verification code from the dev-mode message
+    reg_resp = await client.post("/auth/register", json={
+        "email": email,
+        "name": name,
+    })
+    assert reg_resp.status_code == 200
+    reg_data = reg_resp.json()
+    # Dev mode message format: "Dev mode — your verification code is: 123456. ..."
+    code = reg_data["message"].split("code is: ")[1].split(".")[0]
+
+    # Step 2: Verify — creates the agent and returns the API key
+    verify_resp = await client.post("/auth/verify", json={
+        "email": email,
+        "code": code,
+        "agent_name": agent_name,
+        "framework": framework,
+    })
+    assert verify_resp.status_code == 200
+    return verify_resp.json()
+
+
 @pytest.fixture
 async def registered_agent(client):
     """
-    Register a user + agent and return the registration response.
+    Register a user + agent via the 2-step flow and return the response.
     Includes the raw API key for use in subsequent requests.
     """
-    resp = await client.post("/auth/register", json={
-        "email": "mikey@test.com",
-        "name": "Mikey",
-        "agent_name": "Mikey's Agent",
-        "framework": "openclaw",
-    })
-    assert resp.status_code == 200
-    return resp.json()
+    return await _register_and_verify(
+        client, "mikey@test.com", "Mikey", "Mikey's Agent", "openclaw",
+    )
 
 
 @pytest.fixture
 async def second_agent(client):
     """Register a second agent for connection/messaging tests."""
-    resp = await client.post("/auth/register", json={
-        "email": "sam@test.com",
-        "name": "Sam",
-        "agent_name": "Sam's Agent",
-        "framework": "gpt",
-    })
-    assert resp.status_code == 200
-    return resp.json()
+    return await _register_and_verify(
+        client, "sam@test.com", "Sam", "Sam's Agent", "gpt",
+    )
 
 
 def auth_header(api_key: str) -> dict:

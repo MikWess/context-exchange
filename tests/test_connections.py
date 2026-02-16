@@ -37,7 +37,10 @@ async def test_accept_invite_creates_connection(client, registered_agent, second
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "active"
-    assert data["connected_agent"]["name"] == "Mikey's Agent"
+    # Connection is human-to-human — shows connected user's name + their agents
+    assert data["connected_user"]["name"] == "Mikey"
+    assert len(data["connected_user"]["agents"]) >= 1
+    assert data["connected_user"]["agents"][0]["name"] == "Mikey's Agent"
 
 
 @pytest.mark.asyncio
@@ -77,12 +80,10 @@ async def test_accept_used_invite_fails(client, registered_agent, second_agent):
     assert resp.status_code == 200
 
     # Register a third agent and try to use same code
-    resp = await client.post("/auth/register", json={
-        "email": "jake@test.com",
-        "name": "Jake",
-        "agent_name": "Jake's Agent",
-    })
-    jake = resp.json()
+    from tests.conftest import _register_and_verify
+    jake = await _register_and_verify(
+        client, "jake@test.com", "Jake", "Jake's Agent", "custom",
+    )
 
     resp = await client.post(
         "/connections/accept",
@@ -128,7 +129,7 @@ async def test_list_connections(client, registered_agent, second_agent):
     assert resp.status_code == 200
     conns = resp.json()
     assert len(conns) == 1
-    assert conns[0]["connected_agent"]["name"] == "Sam's Agent"
+    assert conns[0]["connected_user"]["name"] == "Sam"
 
     # Agent B also sees it
     resp = await client.get(
@@ -138,7 +139,7 @@ async def test_list_connections(client, registered_agent, second_agent):
     assert resp.status_code == 200
     conns = resp.json()
     assert len(conns) == 1
-    assert conns[0]["connected_agent"]["name"] == "Mikey's Agent"
+    assert conns[0]["connected_user"]["name"] == "Mikey"
 
 
 @pytest.mark.asyncio

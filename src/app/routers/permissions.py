@@ -26,9 +26,9 @@ from src.app.schemas import (
 router = APIRouter(tags=["permissions"])
 
 
-def _verify_agent_in_connection(agent: Agent, connection: Connection):
-    """Check that the agent is part of this connection. Raises 403 if not."""
-    if agent.id not in (connection.agent_a_id, connection.agent_b_id):
+def _verify_user_in_connection(agent: Agent, connection: Connection):
+    """Check that the agent's human is part of this connection. Raises 403 if not."""
+    if agent.user_id not in (connection.user_a_id, connection.user_b_id):
         raise HTTPException(status_code=403, detail="Not your connection")
 
 
@@ -55,13 +55,13 @@ async def get_permissions(
         raise HTTPException(status_code=404, detail="Connection not found")
 
     # Verify this agent is part of the connection
-    _verify_agent_in_connection(agent, connection)
+    _verify_user_in_connection(agent, connection)
 
     # Get all permissions for this agent on this connection
     result = await db.execute(
         select(Permission).where(
             Permission.connection_id == connection_id,
-            Permission.agent_id == agent.id,
+            Permission.user_id == agent.user_id,
         )
     )
     permissions = result.scalars().all()
@@ -111,13 +111,13 @@ async def update_permission(
         raise HTTPException(status_code=404, detail="Connection not found")
 
     # Verify this agent is part of the connection
-    _verify_agent_in_connection(agent, connection)
+    _verify_user_in_connection(agent, connection)
 
     # Find the permission row for this category
     result = await db.execute(
         select(Permission).where(
             Permission.connection_id == connection_id,
-            Permission.agent_id == agent.id,
+            Permission.user_id == agent.user_id,
             Permission.category == req.category,
         )
     )

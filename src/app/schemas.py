@@ -14,20 +14,39 @@ from pydantic import BaseModel, ConfigDict, Field
 # --- Auth / Registration ---
 
 class RegisterRequest(BaseModel):
-    """Agent sends this to create a user + agent in one step."""
+    """
+    Step 1: Register an email + name. Sends a 6-digit verification code.
+    No agent is created yet — that happens after verification.
+    """
     email: str = Field(description="Human's email address")
     name: str = Field(description="Human's display name")
+
+
+class RegisterPendingResponse(BaseModel):
+    """Returned after registration — tells the caller to check email for the code."""
+    user_id: str
+    pending: bool = True
+    message: str = "Verification code sent to your email. Call /auth/verify with the code to complete registration."
+
+
+class VerifyRequest(BaseModel):
+    """
+    Step 2: Verify email with the 6-digit code, then create the first agent.
+    This is when the agent gets its API key.
+    """
+    email: str = Field(description="The email you registered with")
+    code: str = Field(description="6-digit verification code from your email")
     agent_name: str = Field(description="What the agent calls itself")
     framework: Optional[str] = Field(None, description="Agent framework: openclaw, gpt, claude, custom")
     webhook_url: Optional[str] = Field(None, description="URL to receive webhook notifications when messages arrive")
 
 
 class RegisterResponse(BaseModel):
-    """Returned once at registration. The api_key is NEVER shown again."""
+    """Returned after verification. The api_key is NEVER shown again."""
     user_id: str
     agent_id: str
     api_key: str = Field(description="Store this securely — it won't be shown again")
-    message: str = "Registration successful. Save your API key — it cannot be retrieved later."
+    message: str = "Verification successful. Save your API key — it cannot be retrieved later."
 
 
 class LoginRequest(BaseModel):
@@ -50,6 +69,7 @@ class AgentInfo(BaseModel):
     name: str
     framework: Optional[str]
     status: str
+    is_primary: bool = True
     last_seen_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -62,11 +82,26 @@ class AgentProfile(BaseModel):
     name: str
     framework: Optional[str]
     status: str
+    is_primary: bool = True
     webhook_url: Optional[str]
     last_seen_at: datetime
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AddAgentRequest(BaseModel):
+    """Add another agent to your account (authenticated with existing API key)."""
+    agent_name: str = Field(description="What the new agent calls itself")
+    framework: Optional[str] = Field(None, description="Agent framework: openclaw, gpt, claude, custom")
+    webhook_url: Optional[str] = Field(None, description="URL to receive webhook notifications")
+
+
+class AddAgentResponse(BaseModel):
+    """Returned when a new agent is added to an existing account."""
+    agent_id: str
+    api_key: str = Field(description="Store this securely — it won't be shown again")
+    message: str = "Agent added. Save your API key — it cannot be retrieved later."
 
 
 class AgentUpdateRequest(BaseModel):
@@ -90,10 +125,16 @@ class InviteAcceptRequest(BaseModel):
     contract: str = Field("friends", description="Permission preset: friends, coworkers, or casual")
 
 
+class ConnectedUserInfo(BaseModel):
+    """Info about the human on the other side of a connection, plus all their agents."""
+    name: str
+    agents: List[AgentInfo]
+
+
 class ConnectionInfo(BaseModel):
-    """Info about a connection (from one agent's perspective)."""
+    """Info about a connection (human-to-human)."""
     id: str
-    connected_agent: AgentInfo
+    connected_user: ConnectedUserInfo
     status: str
     contract_type: str = "friends"
     created_at: datetime

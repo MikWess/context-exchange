@@ -52,23 +52,31 @@ async def _deliver_webhook(webhook_url: str, payload: dict):
 
 
 async def _verify_connection(
-    agent_id: str, other_agent_id: str, db: AsyncSession
+    sender_agent: Agent, recipient_agent: Agent, db: AsyncSession
 ) -> Connection:
     """
-    Check that two agents are connected. Returns the connection.
-    Raises 403 if not connected.
+    Check that two agents' humans are connected. Returns the connection.
+
+    Connection validation is at the HUMAN level — the sender's user_id
+    must be connected to the recipient's user_id. This means any agent
+    under one human can message any agent under the other human.
+
+    Raises 403 if the humans aren't connected.
     """
+    sender_user_id = sender_agent.user_id
+    recipient_user_id = recipient_agent.user_id
+
     result = await db.execute(
         select(Connection).where(
             Connection.status == "active",
             or_(
                 and_(
-                    Connection.agent_a_id == agent_id,
-                    Connection.agent_b_id == other_agent_id,
+                    Connection.user_a_id == sender_user_id,
+                    Connection.user_b_id == recipient_user_id,
                 ),
                 and_(
-                    Connection.agent_a_id == other_agent_id,
-                    Connection.agent_b_id == agent_id,
+                    Connection.user_a_id == recipient_user_id,
+                    Connection.user_b_id == sender_user_id,
                 ),
             ),
         )
@@ -77,7 +85,7 @@ async def _verify_connection(
     if not connection:
         raise HTTPException(
             status_code=403,
-            detail="Not connected with this agent. Send an invite first.",
+            detail="Not connected with this agent's owner. Send an invite first.",
         )
     return connection
 
@@ -143,21 +151,22 @@ async def send_message(
 
     # Verify the recipient exists
     result = await db.execute(select(Agent).where(Agent.id == req.to_agent_id))
-    if not result.scalar_one_or_none():
+    recipient_agent = result.scalar_one_or_none()
+    if not recipient_agent:
         raise HTTPException(status_code=404, detail="Recipient agent not found")
 
-    # Verify connection
-    connection = await _verify_connection(agent.id, req.to_agent_id, db)
+    # Verify connection at the HUMAN level (sender's user ↔ recipient's user)
+    connection = await _verify_connection(agent, recipient_agent, db)
 
-    # Check permissions — if the message has a category, verify both sides
-    # allow it. If either side has "never", the message is blocked.
+    # Check permissions at the HUMAN level — permissions are per-user, not per-agent.
+    # If either side has "never" for this category, the message is blocked.
     # Messages with no category (plain text chat) always go through.
     if req.category:
-        # Sender's permission — are they allowed to send this category?
+        # Sender's human permission — are they allowed to send this category?
         result = await db.execute(
             select(Permission).where(
                 Permission.connection_id == connection.id,
-                Permission.agent_id == agent.id,
+                Permission.user_id == agent.user_id,
                 Permission.category == req.category,
             )
         )
@@ -168,11 +177,11 @@ async def send_message(
                 detail=f"You don't have permission to share {req.category} with this connection",
             )
 
-        # Receiver's permission — have they blocked this category?
+        # Receiver's human permission — have they blocked this category?
         result = await db.execute(
             select(Permission).where(
                 Permission.connection_id == connection.id,
-                Permission.agent_id == req.to_agent_id,
+                Permission.user_id == recipient_agent.user_id,
                 Permission.category == req.category,
             )
         )
@@ -394,13 +403,13 @@ async def list_threads(
 
     Returns threads from all connections, sorted by most recent activity.
     """
-    # Find all connections for this agent
+    # Find all connections for this human (not just this agent)
     result = await db.execute(
         select(Connection.id).where(
             Connection.status == "active",
             or_(
-                Connection.agent_a_id == agent.id,
-                Connection.agent_b_id == agent.id,
+                Connection.user_a_id == agent.user_id,
+                Connection.user_b_id == agent.user_id,
             ),
         )
     )
@@ -440,12 +449,12 @@ async def get_thread(
     if not thread:
         raise HTTPException(status_code=404, detail="Thread not found")
 
-    # Verify this agent is part of the connection
+    # Verify this human is part of the connection
     result = await db.execute(
         select(Connection).where(Connection.id == thread.connection_id)
     )
     connection = result.scalar_one()
-    if agent.id not in (connection.agent_a_id, connection.agent_b_id):
+    if agent.user_id not in (connection.user_a_id, connection.user_b_id):
         raise HTTPException(status_code=403, detail="Not your thread")
 
     # Get all messages in the thread

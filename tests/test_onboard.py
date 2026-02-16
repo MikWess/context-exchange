@@ -23,6 +23,7 @@ async def test_setup_returns_markdown(client):
     assert "Step 1" in body
     assert "Step 2" in body
     assert "/auth/register" in body
+    assert "/auth/verify" in body
     # Should contain the test server URL
     assert "http://test" in body
     # Should NOT contain invite-specific content
@@ -49,7 +50,8 @@ async def test_join_with_valid_invite(client, registered_agent):
     # Should contain the invite code in the curl command
     assert invite_code in body
     # Should contain the inviter's agent name
-    assert "Mikey's Agent" in body
+    # Now shows the human's name, not the agent's name
+    assert "Mikey" in body
     # Should contain the invite acceptance step
     assert "Step 4: Accept the invite" in body
     # Should contain the server URL

@@ -15,7 +15,8 @@ async def test_observe_returns_html(client, registered_agent):
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
     assert "Observer" in resp.text
-    assert "Mikey's Agent" in resp.text
+    # Agent name appears in the switcher dropdown (HTML-escaped apostrophe)
+    assert "Mikey&#x27;s Agent" in resp.text
 
 
 @pytest.mark.asyncio

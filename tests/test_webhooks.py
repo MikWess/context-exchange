@@ -2,7 +2,7 @@
 Tests for the webhook notification system.
 
 Covers:
-- Register with webhook_url → stored correctly
+- Verify with webhook_url → stored correctly
 - Update webhook_url via PUT /auth/me
 - Clear webhook_url
 - Message to agent with webhook → POST fires (mocked)
@@ -12,17 +12,25 @@ Covers:
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from tests.conftest import auth_header
+from tests.conftest import auth_header, _register_and_verify
 
 
-# --- Registration with webhook_url ---
+# --- Verification with webhook_url ---
 
 @pytest.mark.asyncio
-async def test_register_with_webhook_url(client):
-    """Agent can provide a webhook_url at registration time."""
+async def test_verify_with_webhook_url(client):
+    """Agent can provide a webhook_url at verification time."""
+    # Step 1: register
     resp = await client.post("/auth/register", json={
         "email": "webhook@test.com",
         "name": "Webhook User",
+    })
+    code = resp.json()["message"].split("code is: ")[1].split(".")[0]
+
+    # Step 2: verify with webhook
+    resp = await client.post("/auth/verify", json={
+        "email": "webhook@test.com",
+        "code": code,
         "agent_name": "Webhook Agent",
         "framework": "custom",
         "webhook_url": "https://example.com/webhook",
@@ -37,17 +45,13 @@ async def test_register_with_webhook_url(client):
 
 
 @pytest.mark.asyncio
-async def test_register_without_webhook_url(client):
+async def test_verify_without_webhook_url(client):
     """Webhook URL is optional — agents without it get null."""
-    resp = await client.post("/auth/register", json={
-        "email": "nowebhook@test.com",
-        "name": "No Webhook",
-        "agent_name": "Polling Agent",
-        "framework": "gpt",
-    })
-    assert resp.status_code == 200
+    data = await _register_and_verify(
+        client, "nowebhook@test.com", "No Webhook", "Polling Agent", "gpt",
+    )
 
-    api_key = resp.json()["api_key"]
+    api_key = data["api_key"]
     resp = await client.get("/auth/me", headers=auth_header(api_key))
     assert resp.json()["webhook_url"] is None
 

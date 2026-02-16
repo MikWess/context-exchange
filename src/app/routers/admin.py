@@ -10,6 +10,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import text
+
 from src.app.config import ADMIN_KEY
 from src.app.database import get_db
 from src.app.models import Announcement
@@ -76,3 +78,30 @@ async def list_announcements(
     )
     announcements = result.scalars().all()
     return [AnnouncementInfo.model_validate(a) for a in announcements]
+
+
+@router.post("/reset")
+async def reset_database(
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_admin_key),
+):
+    """
+    TEMPORARY: Wipe all data from the database. Used for fresh-start resets.
+    Protected by admin key. Delete this endpoint after use.
+    """
+    # Order matters — delete children before parents (foreign key constraints)
+    tables = [
+        "announcement_reads",
+        "announcements",
+        "messages",
+        "threads",
+        "permissions",
+        "connections",
+        "invites",
+        "agents",
+        "users",
+    ]
+    for table in tables:
+        await db.execute(text(f"DELETE FROM {table}"))
+
+    return {"status": "ok", "message": "All data wiped"}

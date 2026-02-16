@@ -31,16 +31,22 @@ def utcnow() -> datetime:
 
 
 class User(Base):
-    """A human who owns an agent. Created during the agent setup flow."""
+    """A human who owns one or more agents. Created during registration."""
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_uuid)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Email verification — user can't do anything until verified
+    verified: Mapped[bool] = mapped_column(default=False)
+    # 6-digit code sent to email, stored temporarily until verified
+    verification_code: Mapped[Optional[str]] = mapped_column(String(6), nullable=True)
+    # When the verification code expires
+    verification_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
-    # One user has one agent (for now — could be many later)
-    agent: Mapped[Optional["Agent"]] = relationship(back_populates="user")
+    # One user can have many agents (OpenClaw, Claude, GPT, etc.)
+    agents: Mapped[list["Agent"]] = relationship(back_populates="user")
 
 
 class Agent(Base):
@@ -52,33 +58,38 @@ class Agent(Base):
     __tablename__ = "agents"
 
     id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_uuid)
-    user_id: Mapped[str] = mapped_column(String(16), ForeignKey("users.id"), unique=True, nullable=False)
+    # No longer unique — one user can have multiple agents
+    user_id: Mapped[str] = mapped_column(String(16), ForeignKey("users.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     # API key hash — the raw key is only returned at registration
     api_key_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     # What agent framework (openclaw, gpt, claude, custom)
     framework: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="online")
+    # First agent created is primary — messages to "the human" go to the primary agent
+    is_primary: Mapped[bool] = mapped_column(default=True)
     # Webhook URL — if set, our server POSTs messages here on delivery
     # Agents without a webhook keep polling /messages/inbox instead
     webhook_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
-    user: Mapped["User"] = relationship(back_populates="agent")
+    user: Mapped["User"] = relationship(back_populates="agents")
 
 
 class Invite(Base):
     """
-    An invite code that lets another agent connect to the inviter.
+    An invite code that lets another human connect to the inviter.
     Expires after INVITE_EXPIRE_HOURS. Single-use.
     """
     __tablename__ = "invites"
 
     id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_uuid)
     code: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
-    from_agent_id: Mapped[str] = mapped_column(String(16), ForeignKey("agents.id"), nullable=False)
-    used_by_agent_id: Mapped[Optional[str]] = mapped_column(String(16), ForeignKey("agents.id"), nullable=True)
+    # Who created this invite (human-level)
+    from_user_id: Mapped[str] = mapped_column(String(16), ForeignKey("users.id"), nullable=False)
+    # Who accepted it (human-level)
+    used_by_user_id: Mapped[Optional[str]] = mapped_column(String(16), ForeignKey("users.id"), nullable=True)
     used: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
@@ -86,21 +97,23 @@ class Invite(Base):
 
 class Connection(Base):
     """
-    A bidirectional link between two agents.
-    Created when an invite is accepted.
+    A bidirectional link between two humans.
+    Created when an invite is accepted. All agents under both humans
+    can communicate through this connection.
     """
     __tablename__ = "connections"
 
     id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_uuid)
-    agent_a_id: Mapped[str] = mapped_column(String(16), ForeignKey("agents.id"), nullable=False)
-    agent_b_id: Mapped[str] = mapped_column(String(16), ForeignKey("agents.id"), nullable=False)
+    # Human-to-human connection (not agent-to-agent)
+    user_a_id: Mapped[str] = mapped_column(String(16), ForeignKey("users.id"), nullable=False)
+    user_b_id: Mapped[str] = mapped_column(String(16), ForeignKey("users.id"), nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="active")
     # Which contract preset was used (friends, coworkers, casual)
     contract_type: Mapped[str] = mapped_column(String(50), default="friends")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     __table_args__ = (
-        Index("ix_connection_agents", "agent_a_id", "agent_b_id", unique=True),
+        Index("ix_connection_users", "user_a_id", "user_b_id", unique=True),
     )
 
 
@@ -162,8 +175,8 @@ class Permission(Base):
     id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_uuid)
     # Which connection this permission belongs to
     connection_id: Mapped[str] = mapped_column(String(16), ForeignKey("connections.id"), nullable=False)
-    # Which agent's permission this is
-    agent_id: Mapped[str] = mapped_column(String(16), ForeignKey("agents.id"), nullable=False)
+    # Which human's permission this is (not agent — permissions are per-human)
+    user_id: Mapped[str] = mapped_column(String(16), ForeignKey("users.id"), nullable=False)
     # Context category: info, requests, personal
     category: Mapped[str] = mapped_column(String(50), nullable=False)
     # Permission level: auto, ask, never
@@ -171,8 +184,8 @@ class Permission(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     __table_args__ = (
-        # One permission per agent per category per connection
-        Index("ix_permission_lookup", "connection_id", "agent_id", "category", unique=True),
+        # One permission per human per category per connection
+        Index("ix_permission_lookup", "connection_id", "user_id", "category", unique=True),
     )
 
 

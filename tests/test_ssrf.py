@@ -7,21 +7,35 @@ Covers:
 - Private IPs blocked (10.x, 172.16.x, 192.168.x)
 - Link-local IPs blocked (169.254.x — AWS metadata attack vector)
 - Valid HTTPS URLs accepted
-- SSRF checks apply to both registration and PUT /auth/me
+- SSRF checks apply to both /auth/verify and PUT /auth/me
 """
 import pytest
 
-from tests.conftest import auth_header
+from tests.conftest import auth_header, _register_and_verify
 
 
-# --- Registration with bad webhook URLs ---
+# Helper: register (step 1) and get the code back, so we can call /auth/verify
+# with different webhook URLs.
+async def _register_and_get_code(client, email, name="Test User"):
+    """Register and extract the dev-mode verification code."""
+    resp = await client.post("/auth/register", json={
+        "email": email,
+        "name": name,
+    })
+    assert resp.status_code == 200
+    code = resp.json()["message"].split("code is: ")[1].split(".")[0]
+    return code
+
+
+# --- Verify with bad webhook URLs ---
 
 @pytest.mark.asyncio
-async def test_register_rejects_http_webhook(client):
+async def test_verify_rejects_http_webhook(client):
     """Webhook URL must be HTTPS — plain HTTP is rejected."""
-    resp = await client.post("/auth/register", json={
+    code = await _register_and_get_code(client, "http@test.com")
+    resp = await client.post("/auth/verify", json={
         "email": "http@test.com",
-        "name": "HTTP User",
+        "code": code,
         "agent_name": "HTTP Agent",
         "framework": "custom",
         "webhook_url": "http://example.com/webhook",
@@ -31,11 +45,12 @@ async def test_register_rejects_http_webhook(client):
 
 
 @pytest.mark.asyncio
-async def test_register_rejects_localhost_webhook(client):
+async def test_verify_rejects_localhost_webhook(client):
     """Webhook URL cannot point to localhost."""
-    resp = await client.post("/auth/register", json={
+    code = await _register_and_get_code(client, "local@test.com")
+    resp = await client.post("/auth/verify", json={
         "email": "local@test.com",
-        "name": "Local User",
+        "code": code,
         "agent_name": "Local Agent",
         "framework": "custom",
         "webhook_url": "https://localhost/webhook",
@@ -45,11 +60,12 @@ async def test_register_rejects_localhost_webhook(client):
 
 
 @pytest.mark.asyncio
-async def test_register_rejects_127_webhook(client):
+async def test_verify_rejects_127_webhook(client):
     """Webhook URL cannot point to 127.0.0.1."""
-    resp = await client.post("/auth/register", json={
+    code = await _register_and_get_code(client, "loopback@test.com")
+    resp = await client.post("/auth/verify", json={
         "email": "loopback@test.com",
-        "name": "Loopback User",
+        "code": code,
         "agent_name": "Loopback Agent",
         "framework": "custom",
         "webhook_url": "https://127.0.0.1/webhook",
@@ -58,17 +74,19 @@ async def test_register_rejects_127_webhook(client):
 
 
 @pytest.mark.asyncio
-async def test_register_rejects_private_ip_webhook(client):
+async def test_verify_rejects_private_ip_webhook(client):
     """Webhook URL cannot point to private IP ranges (10.x, 192.168.x, etc.)."""
     private_ips = [
         "https://10.0.0.1/webhook",
         "https://192.168.1.1/webhook",
         "https://172.16.0.1/webhook",
     ]
-    for url in private_ips:
-        resp = await client.post("/auth/register", json={
-            "email": f"priv-{url.split('//')[1].split('/')[0]}@test.com",
-            "name": "Priv User",
+    for i, url in enumerate(private_ips):
+        email = f"priv{i}@test.com"
+        code = await _register_and_get_code(client, email)
+        resp = await client.post("/auth/verify", json={
+            "email": email,
+            "code": code,
             "agent_name": "Priv Agent",
             "framework": "custom",
             "webhook_url": url,
@@ -77,11 +95,12 @@ async def test_register_rejects_private_ip_webhook(client):
 
 
 @pytest.mark.asyncio
-async def test_register_rejects_link_local_webhook(client):
+async def test_verify_rejects_link_local_webhook(client):
     """Webhook URL cannot point to link-local IPs (169.254.x — AWS metadata attack)."""
-    resp = await client.post("/auth/register", json={
+    code = await _register_and_get_code(client, "linklocal@test.com")
+    resp = await client.post("/auth/verify", json={
         "email": "linklocal@test.com",
-        "name": "Link Local User",
+        "code": code,
         "agent_name": "Link Local Agent",
         "framework": "custom",
         "webhook_url": "https://169.254.169.254/latest/meta-data/",
@@ -90,16 +109,12 @@ async def test_register_rejects_link_local_webhook(client):
 
 
 @pytest.mark.asyncio
-async def test_register_accepts_valid_https_webhook(client):
+async def test_verify_accepts_valid_https_webhook(client):
     """Valid HTTPS URL with a public hostname is accepted."""
-    resp = await client.post("/auth/register", json={
-        "email": "valid@test.com",
-        "name": "Valid User",
-        "agent_name": "Valid Agent",
-        "framework": "custom",
-        "webhook_url": "https://my-agent-server.example.com/webhook",
-    })
-    assert resp.status_code == 200
+    data = await _register_and_verify(
+        client, "valid@test.com", "Valid User", "Valid Agent", "custom",
+    )
+    assert "api_key" in data
 
 
 # --- PUT /auth/me with bad webhook URLs ---

@@ -48,6 +48,17 @@ DEFAULT_CONTRACT = "friends"
 # Agents compare this against their cached version to know when to re-fetch /setup.
 INSTRUCTIONS_VERSION = "4"
 
+# --- Email Verification ---
+# Verification codes expire after this many minutes
+EMAIL_VERIFICATION_EXPIRE_MINUTES = int(os.getenv("EMAIL_VERIFICATION_EXPIRE_MINUTES", "10"))
+
+# Resend API key for sending verification emails.
+# In dev/test, if not set, emails are skipped and the code is returned directly.
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+
+# The "from" address for verification emails (must be verified in Resend)
+EMAIL_FROM = os.getenv("EMAIL_FROM", "BotJoin <noreply@botjoin.ai>")
+
 # Admin key for platform management (creating announcements, etc.)
 # Set via environment variable in production.
 ADMIN_KEY = os.getenv("ADMIN_KEY", "dev-admin-key")

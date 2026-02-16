@@ -1,9 +1,13 @@
 """
 Connection router — invite codes and connection management.
 
+Connections are human-to-human. Any agent under a human can create invites,
+accept invites, and list connections. When two humans connect, ALL of their
+agents can communicate through that connection.
+
 POST /connections/invite  → Generate an invite code
 POST /connections/accept  → Accept an invite and create a connection
-GET  /connections         → List all connections for the current agent
+GET  /connections         → List all connections for the current human
 DELETE /connections/{id}  → Remove a connection
 """
 import secrets
@@ -16,11 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.app.auth import get_current_agent
 from src.app.config import INVITE_EXPIRE_HOURS, BUILT_IN_CONTRACTS, DEFAULT_CONTRACT
 from src.app.database import get_db
-from src.app.models import Agent, Invite, Connection, Permission
+from src.app.models import Agent, User, Invite, Connection, Permission
 from src.app.schemas import (
     InviteCreateResponse,
     InviteAcceptRequest,
     ConnectionInfo,
+    ConnectedUserInfo,
     AgentInfo,
 )
 
@@ -39,16 +44,16 @@ async def create_invite(
     Input: (just the API key in header)
     Output: An invite code, a ready-to-share join URL, and expiry time
 
-    The agent shares the join_url with another person. Their agent fetches
-    it and gets full setup instructions with the invite code baked in.
-    Codes are single-use and expire after INVITE_EXPIRE_HOURS.
+    The invite is created at the human level (from_user_id). Any of the
+    human's agents can create invites — they all represent the same person.
     """
     code = secrets.token_urlsafe(16)
     expires_at = datetime.utcnow() + timedelta(hours=INVITE_EXPIRE_HOURS)
 
+    # Invite is from the human, not the specific agent
     invite = Invite(
         code=code,
-        from_agent_id=agent.id,
+        from_user_id=agent.user_id,
         expires_at=expires_at,
     )
     db.add(invite)
@@ -69,13 +74,13 @@ async def accept_invite(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Accept an invite code to form a connection.
+    Accept an invite code to form a human-to-human connection.
 
-    Input: invite_code
-    Output: The new connection info
+    Input: invite_code + optional contract preset
+    Output: The new connection info (connected human + all their agents)
 
-    Validates the code is real, not expired, not used, and not from yourself.
-    Creates a bidirectional connection between the two agents.
+    Creates a bidirectional connection between two humans. Both humans'
+    agents can now communicate through this connection.
     """
     # Find the invite
     result = await db.execute(
@@ -92,27 +97,28 @@ async def accept_invite(
     if invite.expires_at < datetime.utcnow():
         raise HTTPException(status_code=400, detail="This invite has expired")
 
-    if invite.from_agent_id == agent.id:
+    # Can't connect with yourself (same human)
+    if invite.from_user_id == agent.user_id:
         raise HTTPException(status_code=400, detail="You can't connect with yourself")
 
-    # Check if already connected
+    # Check if already connected (human-to-human)
     result = await db.execute(
         select(Connection).where(
             or_(
                 and_(
-                    Connection.agent_a_id == invite.from_agent_id,
-                    Connection.agent_b_id == agent.id,
+                    Connection.user_a_id == invite.from_user_id,
+                    Connection.user_b_id == agent.user_id,
                 ),
                 and_(
-                    Connection.agent_a_id == agent.id,
-                    Connection.agent_b_id == invite.from_agent_id,
+                    Connection.user_a_id == agent.user_id,
+                    Connection.user_b_id == invite.from_user_id,
                 ),
             )
         )
     )
     existing = result.scalar_one_or_none()
     if existing:
-        raise HTTPException(status_code=400, detail="Already connected with this agent")
+        raise HTTPException(status_code=400, detail="Already connected with this person")
 
     # Validate the contract name
     contract_name = req.contract if req.contract else DEFAULT_CONTRACT
@@ -125,39 +131,48 @@ async def accept_invite(
 
     # Mark invite as used
     invite.used = True
-    invite.used_by_agent_id = agent.id
+    invite.used_by_user_id = agent.user_id
 
-    # Create the connection with the chosen contract
+    # Create the human-to-human connection
     connection = Connection(
-        agent_a_id=invite.from_agent_id,
-        agent_b_id=agent.id,
+        user_a_id=invite.from_user_id,
+        user_b_id=agent.user_id,
         contract_type=contract_name,
     )
     db.add(connection)
     await db.flush()
 
-    # Create permissions for both agents from the contract preset.
-    # Both agents get the same starting levels — either can customize later.
-    for agent_id in (invite.from_agent_id, agent.id):
+    # Create permissions for both humans from the contract preset.
+    # Permissions are per-human, not per-agent — all agents under a human
+    # share the same permission levels.
+    for user_id in (invite.from_user_id, agent.user_id):
         for category, level in contract_levels.items():
             perm = Permission(
                 connection_id=connection.id,
-                agent_id=agent_id,
+                user_id=user_id,
                 category=category,
                 level=level,
             )
             db.add(perm)
     await db.flush()
 
-    # Load the other agent's info to return
+    # Load the other human's info + all their agents
     result = await db.execute(
-        select(Agent).where(Agent.id == invite.from_agent_id)
+        select(User).where(User.id == invite.from_user_id)
     )
-    other_agent = result.scalar_one()
+    other_user = result.scalar_one()
+
+    result = await db.execute(
+        select(Agent).where(Agent.user_id == invite.from_user_id)
+    )
+    other_agents = result.scalars().all()
 
     return ConnectionInfo(
         id=connection.id,
-        connected_agent=AgentInfo.model_validate(other_agent),
+        connected_user=ConnectedUserInfo(
+            name=other_user.name,
+            agents=[AgentInfo.model_validate(a) for a in other_agents],
+        ),
         status=connection.status,
         contract_type=connection.contract_type,
         created_at=connection.created_at,
@@ -170,20 +185,22 @@ async def list_connections(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    List all connections for the current agent.
+    List all connections for the current human.
 
-    Input: (just the API key)
-    Output: List of connections with the other agent's info
+    Input: (just the API key — any of your agents)
+    Output: List of connections with the other human's name + all their agents
 
-    Returns active connections. Each connection shows the other agent's
-    name, framework, status, and when they were last seen.
+    Returns active connections at the human level. Each connection shows
+    who you're connected to and all of their agents.
     """
-    # Find all connections where this agent is either side
+    user_id = agent.user_id
+
+    # Find all connections where this human is either side
     result = await db.execute(
         select(Connection).where(
             or_(
-                Connection.agent_a_id == agent.id,
-                Connection.agent_b_id == agent.id,
+                Connection.user_a_id == user_id,
+                Connection.user_b_id == user_id,
             )
         )
     )
@@ -191,15 +208,26 @@ async def list_connections(
 
     response = []
     for conn in connections:
-        # Figure out who the "other" agent is
-        other_id = conn.agent_b_id if conn.agent_a_id == agent.id else conn.agent_a_id
-        result = await db.execute(select(Agent).where(Agent.id == other_id))
-        other_agent = result.scalar_one()
+        # Figure out who the "other" human is
+        other_user_id = conn.user_b_id if conn.user_a_id == user_id else conn.user_a_id
+
+        # Load their info
+        result = await db.execute(select(User).where(User.id == other_user_id))
+        other_user = result.scalar_one()
+
+        # Load all their agents
+        result = await db.execute(
+            select(Agent).where(Agent.user_id == other_user_id)
+        )
+        other_agents = result.scalars().all()
 
         response.append(
             ConnectionInfo(
                 id=conn.id,
-                connected_agent=AgentInfo.model_validate(other_agent),
+                connected_user=ConnectedUserInfo(
+                    name=other_user.name,
+                    agents=[AgentInfo.model_validate(a) for a in other_agents],
+                ),
                 status=conn.status,
                 contract_type=conn.contract_type or "friends",
                 created_at=conn.created_at,
@@ -221,7 +249,7 @@ async def remove_connection(
     Input: connection_id in URL
     Output: 204 No Content
 
-    Either side of a connection can remove it.
+    Either side of a connection can remove it. Uses user_id for auth.
     """
     result = await db.execute(
         select(Connection).where(Connection.id == connection_id)
@@ -231,7 +259,7 @@ async def remove_connection(
     if not connection:
         raise HTTPException(status_code=404, detail="Connection not found")
 
-    if agent.id not in (connection.agent_a_id, connection.agent_b_id):
+    if agent.user_id not in (connection.user_a_id, connection.user_b_id):
         raise HTTPException(status_code=403, detail="Not your connection")
 
     connection.status = "removed"

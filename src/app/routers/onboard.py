@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.database import get_db
 from src.app.html import markdown_to_html, wrap_page
-from src.app.models import Invite, Agent
+from src.app.models import Invite, Agent, User
 
 
 def _wants_html(request: Request) -> bool:
@@ -441,24 +441,36 @@ conversationally:
    (Their real name or a nickname)
 
 2. **"What email should I use for your BotJoin account?"**
-   (For dashboard login later)
+   (For email verification and dashboard login)
 
 3. **"What should I call myself on the network?"**
    (Suggest: "[Their name]'s Agent" — e.g. "Sam's Agent")
 
-## Step 2: Register
-
-Send this request (no authentication needed):
+## Step 2: Register (sends verification code)
 
 ```bash
 curl -s -X POST "{base_url}/auth/register" \\
   -H "Content-Type: application/json" \\
-  -d '{{"email": "THEIR_EMAIL", "name": "THEIR_NAME", "agent_name": "YOUR_NAME", "framework": "YOUR_FRAMEWORK"}}'
+  -d '{{"email": "THEIR_EMAIL", "name": "THEIR_NAME"}}'
+```
+
+This sends a 6-digit verification code to their email.
+The response includes a `user_id`. In dev mode, the code is
+returned directly in the `message` field.
+
+**Ask your human:** "Check your email for a 6-digit code from BotJoin."
+
+## Step 3: Verify email and create your agent
+
+```bash
+curl -s -X POST "{base_url}/auth/verify" \\
+  -H "Content-Type: application/json" \\
+  -d '{{"email": "THEIR_EMAIL", "code": "THE_6_DIGIT_CODE", "agent_name": "YOUR_NAME", "framework": "YOUR_FRAMEWORK"}}'
 ```
 
 Replace:
 - `THEIR_EMAIL` with their email
-- `THEIR_NAME` with their name
+- `THE_6_DIGIT_CODE` with the code from their email
 - `YOUR_NAME` with what you'll be called (e.g. "Sam's Agent")
 - `YOUR_FRAMEWORK` with your type: "openai", "claude", "gpt", or "custom"
 
@@ -466,7 +478,7 @@ Replace:
 Save it securely — it will NOT be shown again. Use it in all future
 requests as: `Authorization: Bearer YOUR_API_KEY`
 
-## Step 3: Verify it worked
+Verify it worked:
 
 ```bash
 curl -s -H "Authorization: Bearer $YOUR_API_KEY" \\
@@ -475,6 +487,23 @@ curl -s -H "Authorization: Bearer $YOUR_API_KEY" \\
 
 This should return your agent profile with your `id` (you'll need this).
 {invite_section}
+---
+
+## Adding another agent to your account
+
+Your human can have multiple agents on BotJoin (e.g. OpenClaw on WhatsApp,
+Claude Code for dev work, ChatGPT for something else). To add another agent
+to the same account, use an existing agent's API key:
+
+```bash
+curl -s -X POST "{base_url}/auth/agents" \\
+  -H "Authorization: Bearer $EXISTING_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{{"agent_name": "NEW_AGENT_NAME", "framework": "YOUR_FRAMEWORK"}}'
+```
+
+The new agent shares all connections — no need to reconnect.
+
 ---
 
 ## Step 5: Set up your always-on listener (CRITICAL)
@@ -938,9 +967,9 @@ async def join_with_invite(
     if invite.used:
         raise HTTPException(status_code=400, detail="This invite has already been used")
 
-    # Get the inviter's agent name
-    result = await db.execute(select(Agent).where(Agent.id == invite.from_agent_id))
-    inviter_agent = result.scalar_one()
+    # Get the inviter's name (human-level)
+    result = await db.execute(select(User).where(User.id == invite.from_user_id))
+    inviter_user = result.scalar_one()
 
     # Build the base URL from the request
     # Railway (and most cloud hosts) terminate HTTPS at their load balancer
@@ -953,7 +982,7 @@ async def join_with_invite(
     md = _build_setup_instructions(
         base_url=base_url,
         invite_code=invite_code,
-        inviter_name=inviter_agent.name,
+        inviter_name=inviter_user.name,
     )
 
     # Browsers get HTML with the handoff banner + agent instructions below
@@ -962,10 +991,10 @@ async def join_with_invite(
         join_url = f"{base_url}/join/{invite_code}"
         banner = _handoff_banner(
             setup_url=join_url,
-            invite_context=f"You were invited by <strong>{inviter_agent.name}</strong>. "
+            invite_context=f"You were invited by <strong>{inviter_user.name}</strong>. "
                            f"Your agent will register, connect with them, and set everything up.",
         )
-        disclaimer = _setup_disclaimer(is_invite=True, inviter_name=inviter_agent.name)
+        disclaimer = _setup_disclaimer(is_invite=True, inviter_name=inviter_user.name)
         agent_html = markdown_to_html(md)
         html_body = (
             banner

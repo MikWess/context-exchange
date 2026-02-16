@@ -1,21 +1,33 @@
 """
-Tests for auth endpoints: register, login, get profile.
+Tests for auth endpoints: register, verify, login, get profile.
 """
 import pytest
-from tests.conftest import auth_header
+from tests.conftest import auth_header, _register_and_verify
 
 
 @pytest.mark.asyncio
-async def test_register_creates_user_and_agent(client):
-    """Registration creates a user + agent and returns an API key."""
+async def test_register_returns_pending(client):
+    """POST /auth/register returns a pending response with verification code in dev mode."""
     resp = await client.post("/auth/register", json={
         "email": "test@example.com",
         "name": "Test User",
-        "agent_name": "Test Agent",
-        "framework": "openclaw",
     })
     assert resp.status_code == 200
     data = resp.json()
+
+    # Should return pending status and user ID
+    assert data["pending"] is True
+    assert "user_id" in data
+    # Dev mode: code is in the message
+    assert "code is:" in data["message"]
+
+
+@pytest.mark.asyncio
+async def test_verify_creates_agent_with_api_key(client):
+    """Full register → verify flow creates a user + agent and returns an API key."""
+    data = await _register_and_verify(
+        client, "test@example.com", "Test User", "Test Agent", "openclaw",
+    )
 
     # Should return all the IDs and a key
     assert "user_id" in data
@@ -26,18 +38,56 @@ async def test_register_creates_user_and_agent(client):
 
 
 @pytest.mark.asyncio
-async def test_register_duplicate_email_fails(client):
-    """Can't register twice with the same email."""
-    payload = {
+async def test_verify_with_wrong_code_fails(client):
+    """Verification with an incorrect code is rejected."""
+    resp = await client.post("/auth/register", json={
+        "email": "wrongcode@test.com",
+        "name": "Wrong Code User",
+    })
+    assert resp.status_code == 200
+
+    resp = await client.post("/auth/verify", json={
+        "email": "wrongcode@test.com",
+        "code": "000000",
+        "agent_name": "Agent",
+    })
+    assert resp.status_code == 400
+    assert "Invalid verification code" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_register_duplicate_verified_email_fails(client):
+    """Can't register again after email is already verified."""
+    # Register and verify first
+    await _register_and_verify(
+        client, "dupe@example.com", "First", "Agent 1", "openclaw",
+    )
+
+    # Try to register same email again — should fail
+    resp = await client.post("/auth/register", json={
         "email": "dupe@example.com",
-        "name": "First",
-        "agent_name": "Agent 1",
-    }
-    resp1 = await client.post("/auth/register", json=payload)
+        "name": "Second",
+    })
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_register_unverified_email_allows_re_register(client):
+    """Can re-register with same email if it was never verified (gets new code)."""
+    # Register but don't verify
+    resp1 = await client.post("/auth/register", json={
+        "email": "lazy@example.com",
+        "name": "Lazy User",
+    })
     assert resp1.status_code == 200
 
-    resp2 = await client.post("/auth/register", json=payload)
-    assert resp2.status_code == 409
+    # Register again with same email — should succeed (new code)
+    resp2 = await client.post("/auth/register", json={
+        "email": "lazy@example.com",
+        "name": "Lazy User v2",
+    })
+    assert resp2.status_code == 200
+    assert "code is:" in resp2.json()["message"]
 
 
 @pytest.mark.asyncio

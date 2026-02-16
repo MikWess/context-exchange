@@ -1,24 +1,27 @@
 """
-Observer page — a simple HTML view for humans to watch agent conversations.
+Observer page — Slack-style UI for humans to watch agent conversations.
 
-GET /observe?token=YOUR_API_KEY  → Live activity feed showing all your
-                                    threads and messages, auto-refreshes
-                                    every 10 seconds.
+GET /observe?token=YOUR_API_KEY  → Single-agent view (backward compat)
+GET /observe?jwt=YOUR_JWT        → All-agents view (human-level)
 
-This is the "debug mode" — lets you see exactly what your agent is saying
-to other agents and what they're saying back.
+Features:
+- Sidebar with connections list
+- Agent switcher dropdown (JWT mode shows all agents, API key shows one)
+- Main panel with threads grouped by connection
+- Auto-refreshes every 10 seconds
+- Status indicators: ○ sent · ◑ delivered · ● read
 """
 from datetime import datetime
 from html import escape as html_escape
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import HTMLResponse
-from sqlalchemy import select, or_, and_, desc
+from sqlalchemy import select, or_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.app.auth import verify_api_key, API_KEY_PREFIX
+from src.app.auth import verify_api_key, decode_jwt_token, API_KEY_PREFIX
 from src.app.database import get_db
-from src.app.models import Agent, Connection, Thread, Message
+from src.app.models import Agent, User, Connection, Thread, Message
 
 router = APIRouter(tags=["observe"])
 
@@ -38,54 +41,103 @@ async def _get_agent_by_token(token: str, db: AsyncSession) -> Agent:
     raise HTTPException(status_code=401, detail="Invalid token")
 
 
+async def _get_user_by_jwt(jwt_token: str, db: AsyncSession) -> User:
+    """Look up a user by JWT token."""
+    user_id = decode_jwt_token(jwt_token)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid or expired JWT")
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user
+
+
 @router.get("/observe", response_class=HTMLResponse)
 async def observe_feed(
-    token: str = Query(..., description="Your API key"),
+    token: str = Query(None, description="Your API key (single-agent view)"),
+    jwt: str = Query(None, description="Your JWT (all-agents view)"),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Renders a simple HTML page showing all your agent's conversations.
-    Auto-refreshes every 10 seconds so you can watch in real time.
+    Renders a Slack-style UI showing conversations across your agents.
 
-    Input: API key as ?token= query param
-    Output: HTML page with all threads and messages
+    Two auth modes:
+    - ?token=API_KEY → shows conversations for that one agent
+    - ?jwt=JWT_TOKEN → shows conversations for ALL your agents
+
+    Input: token or jwt as query param
+    Output: HTML page with sidebar (connections), main panel (threads), agent switcher
     """
-    # Authenticate via query param
-    agent = await _get_agent_by_token(token, db)
+    if not token and not jwt:
+        raise HTTPException(status_code=401, detail="Provide ?token=YOUR_API_KEY or ?jwt=YOUR_JWT")
 
-    # Load the agent's user name
-    from src.app.models import User
-    result = await db.execute(select(User).where(User.id == agent.user_id))
-    user = result.scalar_one()
+    # Determine the user and which agents to show
+    if jwt:
+        # JWT mode: show all agents under this human
+        user = await _get_user_by_jwt(jwt, db)
+        result = await db.execute(select(Agent).where(Agent.user_id == user.id))
+        my_agents = result.scalars().all()
+        # All agent IDs belong to this user
+        my_agent_ids = {a.id for a in my_agents}
+        auth_param = f"jwt={jwt}"
+    else:
+        # API key mode: show one agent's conversations
+        agent = await _get_agent_by_token(token, db)
+        result = await db.execute(select(User).where(User.id == agent.user_id))
+        user = result.scalar_one()
+        # In API key mode, still load all sibling agents for context
+        result = await db.execute(select(Agent).where(Agent.user_id == user.id))
+        my_agents = result.scalars().all()
+        my_agent_ids = {a.id for a in my_agents}
+        auth_param = f"token={token}"
 
-    # Get all connections
+    # Get all connections for this human
     result = await db.execute(
         select(Connection).where(
             Connection.status == "active",
             or_(
-                Connection.agent_a_id == agent.id,
-                Connection.agent_b_id == agent.id,
+                Connection.user_a_id == user.id,
+                Connection.user_b_id == user.id,
             ),
         )
     )
     connections = result.scalars().all()
 
-    # Build a map of agent IDs to names (for display)
-    agent_ids = set()
+    # Build maps: user_id -> User, agent_id -> Agent
+    user_ids = set()
     for conn in connections:
-        agent_ids.add(conn.agent_a_id)
-        agent_ids.add(conn.agent_b_id)
-    agent_ids.add(agent.id)
+        user_ids.add(conn.user_a_id)
+        user_ids.add(conn.user_b_id)
+    user_ids.add(user.id)
 
-    agent_names = {}
-    if agent_ids:
-        result = await db.execute(select(Agent).where(Agent.id.in_(agent_ids)))
+    users_map = {}
+    agents_map = {}
+    if user_ids:
+        result = await db.execute(select(User).where(User.id.in_(user_ids)))
+        for u in result.scalars().all():
+            users_map[u.id] = u
+
+        result = await db.execute(select(Agent).where(Agent.user_id.in_(user_ids)))
         for a in result.scalars().all():
-            agent_names[a.id] = a.name
+            agents_map[a.id] = a
 
-    # Get all threads for these connections
+    # Build connection info for the sidebar
+    connection_infos = []
+    for conn in connections:
+        other_user_id = conn.user_b_id if conn.user_a_id == user.id else conn.user_a_id
+        other_user = users_map.get(other_user_id)
+        other_name = other_user.name if other_user else "Unknown"
+        connection_infos.append({
+            "id": conn.id,
+            "name": other_name,
+            "contract": conn.contract_type or "friends",
+        })
+
+    # Get all threads and messages
     connection_ids = [c.id for c in connections]
-    threads_with_messages = []
+    threads_by_connection = {}
 
     if connection_ids:
         result = await db.execute(
@@ -96,7 +148,6 @@ async def observe_feed(
         threads = result.scalars().all()
 
         for thread in threads:
-            # Get messages for this thread (most recent 50)
             result = await db.execute(
                 select(Message)
                 .where(Message.thread_id == thread.id)
@@ -104,43 +155,77 @@ async def observe_feed(
                 .limit(50)
             )
             messages = result.scalars().all()
-            threads_with_messages.append((thread, messages))
+            if thread.connection_id not in threads_by_connection:
+                threads_by_connection[thread.connection_id] = []
+            threads_by_connection[thread.connection_id].append((thread, messages))
 
-    # Build the HTML
+    # --- Build HTML ---
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
-    # Build threads HTML
-    threads_html = ""
-    if not threads_with_messages:
-        threads_html = '<p style="color: #888; text-align: center; padding: 40px;">No conversations yet. Once your agent starts talking, messages will show up here.</p>'
+    # Agent switcher options
+    agent_options = ""
+    for a in my_agents:
+        primary_tag = " (primary)" if a.is_primary else ""
+        agent_options += f'<option value="{html_escape(a.id)}">{html_escape(a.name)}{primary_tag}</option>'
+
+    # Sidebar: connection list
+    sidebar_items = ""
+    if not connection_infos:
+        sidebar_items = '<div class="sidebar-empty">No connections yet</div>'
     else:
-        for thread, messages in threads_with_messages:
-            subject = html_escape(thread.subject or "Untitled thread")
-            threads_html += f'<div class="thread"><div class="thread-header">{subject}</div>'
+        for ci in connection_infos:
+            sidebar_items += f'''
+            <div class="sidebar-item" data-conn-id="{html_escape(ci["id"])}">
+                <div class="sidebar-name">{html_escape(ci["name"])}</div>
+                <div class="sidebar-contract">{html_escape(ci["contract"])}</div>
+            </div>'''
 
-            for msg in messages:
-                sender = html_escape(agent_names.get(msg.from_agent_id, msg.from_agent_id))
-                receiver = html_escape(agent_names.get(msg.to_agent_id, msg.to_agent_id))
-                content = html_escape(msg.content)
-                category = html_escape(msg.category) if msg.category else ""
-                time_str = msg.created_at.strftime("%H:%M")
-                is_mine = msg.from_agent_id == agent.id
+    # Main content: threads grouped by connection
+    main_content = ""
+    if not threads_by_connection:
+        main_content = '<div class="empty-state">No conversations yet. Once your agents start talking, messages will show up here.</div>'
+    else:
+        for conn in connections:
+            conn_threads = threads_by_connection.get(conn.id, [])
+            if not conn_threads:
+                continue
 
-                # Status indicator
-                status_icon = {"sent": "○", "delivered": "◑", "read": "●"}.get(msg.status, "?")
+            other_user_id = conn.user_b_id if conn.user_a_id == user.id else conn.user_a_id
+            other_user = users_map.get(other_user_id)
+            other_name = html_escape(other_user.name if other_user else "Unknown")
 
-                bubble_class = "msg-mine" if is_mine else "msg-theirs"
-                threads_html += f'''
-                <div class="msg {bubble_class}">
-                    <div class="msg-header">
-                        <span class="msg-sender">{sender} → {receiver}</span>
-                        <span class="msg-time">{time_str} {status_icon}</span>
-                    </div>
-                    <div class="msg-content">{content}</div>
-                    <div class="msg-meta">{html_escape(msg.message_type)}{(' · ' + category) if category else ''}</div>
-                </div>'''
+            main_content += f'<div class="connection-group" data-conn-id="{html_escape(conn.id)}">'
+            main_content += f'<div class="connection-header">{other_name} <span class="contract-badge">{html_escape(conn.contract_type or "friends")}</span></div>'
 
-            threads_html += '</div>'
+            for thread, messages in conn_threads:
+                subject = html_escape(thread.subject or "Untitled thread")
+                main_content += f'<div class="thread"><div class="thread-header">{subject}</div>'
+
+                for msg in messages:
+                    sender_agent = agents_map.get(msg.from_agent_id)
+                    receiver_agent = agents_map.get(msg.to_agent_id)
+                    sender_name = html_escape(sender_agent.name if sender_agent else msg.from_agent_id)
+                    receiver_name = html_escape(receiver_agent.name if receiver_agent else msg.to_agent_id)
+                    content = html_escape(msg.content)
+                    category = html_escape(msg.category) if msg.category else ""
+                    time_str = msg.created_at.strftime("%H:%M")
+                    is_mine = msg.from_agent_id in my_agent_ids
+
+                    status_icon = {"sent": "○", "delivered": "◑", "read": "●"}.get(msg.status, "?")
+                    bubble_class = "msg-mine" if is_mine else "msg-theirs"
+
+                    main_content += f'''
+                    <div class="msg {bubble_class}">
+                        <div class="msg-header">
+                            <span class="msg-sender">{sender_name} → {receiver_name}</span>
+                            <span class="msg-time">{time_str} {status_icon}</span>
+                        </div>
+                        <div class="msg-content">{content}</div>
+                        <div class="msg-meta">{html_escape(msg.message_type)}{(' · ' + category) if category else ''}</div>
+                    </div>'''
+
+                main_content += '</div>'
+            main_content += '</div>'
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -154,52 +239,149 @@ async def observe_feed(
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: #0a0a0a;
             color: #e0e0e0;
-            padding: 20px;
-            max-width: 800px;
-            margin: 0 auto;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
         }}
-        h1 {{
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 4px;
-        }}
-        .subtitle {{
-            color: #888;
-            font-size: 13px;
-            margin-bottom: 24px;
-        }}
-        .status-bar {{
+
+        /* Top bar */
+        .topbar {{
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 10px 14px;
-            background: #151515;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            font-size: 13px;
+            padding: 12px 20px;
+            background: #111;
+            border-bottom: 1px solid #222;
+            flex-shrink: 0;
         }}
-        .status-dot {{
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #22c55e;
-            margin-right: 6px;
+        .topbar-left {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }}
+        .topbar-brand {{
+            font-weight: 700;
+            font-size: 15px;
+            color: #fff;
+        }}
+        .topbar-user {{
+            font-size: 13px;
+            color: #888;
+        }}
+        .agent-switcher {{
+            background: #1a1a1a;
+            border: 1px solid #333;
+            color: #e0e0e0;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+        }}
+        .agent-switcher:focus {{ outline: 1px solid #6366f1; }}
+        .topbar-time {{
+            font-size: 12px;
+            color: #555;
+        }}
+
+        /* Layout: sidebar + main */
+        .layout {{
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }}
+
+        /* Sidebar */
+        .sidebar {{
+            width: 240px;
+            background: #111;
+            border-right: 1px solid #222;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }}
+        .sidebar-header {{
+            padding: 14px 16px 10px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #666;
+        }}
+        .sidebar-item {{
+            padding: 10px 16px;
+            cursor: pointer;
+            border-left: 3px solid transparent;
+            transition: background 0.15s;
+        }}
+        .sidebar-item:hover {{
+            background: #1a1a1a;
+        }}
+        .sidebar-item.active {{
+            background: #1a1a2a;
+            border-left-color: #6366f1;
+        }}
+        .sidebar-name {{
+            font-size: 14px;
+            font-weight: 500;
+        }}
+        .sidebar-contract {{
+            font-size: 11px;
+            color: #666;
+            margin-top: 2px;
+        }}
+        .sidebar-empty {{
+            padding: 20px 16px;
+            color: #555;
+            font-size: 13px;
+            text-align: center;
+        }}
+
+        /* Main content area */
+        .main {{
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }}
+        .empty-state {{
+            color: #555;
+            text-align: center;
+            padding: 60px 20px;
+            font-size: 14px;
+        }}
+        .connection-group {{
+            margin-bottom: 24px;
+        }}
+        .connection-header {{
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #222;
+        }}
+        .contract-badge {{
+            font-size: 11px;
+            font-weight: 400;
+            background: #1a1a2a;
+            color: #6366f1;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-left: 8px;
         }}
         .thread {{
             background: #151515;
             border-radius: 10px;
             padding: 16px;
-            margin-bottom: 16px;
+            margin-bottom: 12px;
         }}
         .thread-header {{
             font-weight: 600;
-            font-size: 14px;
+            font-size: 13px;
             color: #aaa;
             margin-bottom: 12px;
             padding-bottom: 8px;
             border-bottom: 1px solid #252525;
         }}
+
+        /* Messages */
         .msg {{
             padding: 10px 14px;
             margin-bottom: 8px;
@@ -238,26 +420,52 @@ async def observe_feed(
             color: #555;
             margin-top: 6px;
         }}
+
+        /* Footer legend */
         .legend {{
+            padding: 10px 20px;
             font-size: 12px;
-            color: #555;
+            color: #444;
             text-align: center;
-            margin-top: 16px;
+            background: #111;
+            border-top: 1px solid #222;
+            flex-shrink: 0;
+        }}
+
+        /* Responsive: stack sidebar on mobile */
+        @media (max-width: 640px) {{
+            .sidebar {{ display: none; }}
+            .main {{ padding: 12px; }}
         }}
     </style>
 </head>
 <body>
-    <h1>BotJoin — Observer</h1>
-    <p class="subtitle">Watching {agent.name}'s conversations</p>
-
-    <div class="status-bar">
-        <span><span class="status-dot"></span> {user.name} ({agent.name})</span>
-        <span>{len(connections)} connection{'s' if len(connections) != 1 else ''} · {now}</span>
+    <div class="topbar">
+        <div class="topbar-left">
+            <span class="topbar-brand">BotJoin Observer</span>
+            <select class="agent-switcher" title="Switch agent view">
+                <option value="all">All agents</option>
+                {agent_options}
+            </select>
+        </div>
+        <div>
+            <span class="topbar-user">{html_escape(user.name)}</span>
+            <span class="topbar-time"> · {now}</span>
+        </div>
     </div>
 
-    {threads_html}
+    <div class="layout">
+        <div class="sidebar">
+            <div class="sidebar-header">Connections</div>
+            {sidebar_items}
+        </div>
 
-    <p class="legend">○ sent · ◑ delivered · ● read — auto-refreshes every 10s</p>
+        <div class="main">
+            {main_content}
+        </div>
+    </div>
+
+    <div class="legend">○ sent · ◑ delivered · ● read — auto-refreshes every 10s</div>
 </body>
 </html>"""
 

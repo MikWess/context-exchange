@@ -245,13 +245,11 @@ async def test_cant_view_permissions_for_other_connection(client, connected_agen
     _, _, connection_id = connected_agents
 
     # Register a third agent who is NOT in this connection
-    resp = await client.post("/auth/register", json={
-        "email": "outsider@test.com",
-        "name": "Outsider",
-        "agent_name": "Outsider's Agent",
-        "framework": "custom",
-    })
-    outsider_key = resp.json()["api_key"]
+    from tests.conftest import _register_and_verify
+    outsider = await _register_and_verify(
+        client, "outsider@test.com", "Outsider", "Outsider's Agent", "custom",
+    )
+    outsider_key = outsider["api_key"]
 
     resp = await client.get(
         f"/connections/{connection_id}/permissions",
@@ -266,13 +264,11 @@ async def test_cant_update_permissions_for_other_connection(client, connected_ag
     """Agent can't update permissions for a connection they're not part of."""
     _, _, connection_id = connected_agents
 
-    resp = await client.post("/auth/register", json={
-        "email": "outsider2@test.com",
-        "name": "Outsider2",
-        "agent_name": "Outsider2's Agent",
-        "framework": "custom",
-    })
-    outsider_key = resp.json()["api_key"]
+    from tests.conftest import _register_and_verify
+    outsider = await _register_and_verify(
+        client, "outsider2@test.com", "Outsider2", "Outsider2's Agent", "custom",
+    )
+    outsider_key = outsider["api_key"]
 
     resp = await client.put(
         f"/connections/{connection_id}/permissions",

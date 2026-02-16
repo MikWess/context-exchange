@@ -74,6 +74,19 @@ async def run_migrations():
     migrations = [
         ("agents", "webhook_url", "VARCHAR(500) NULL"),
         ("connections", "contract_type", "VARCHAR(50) DEFAULT 'friends'"),
+        # Phase 1: Email verification fields on users
+        ("users", "verified", "BOOLEAN DEFAULT 0"),
+        ("users", "verification_code", "VARCHAR(6) NULL"),
+        ("users", "verification_expires_at", "TIMESTAMP NULL"),
+        # Phase 2: Multi-agent — primary flag on agents
+        ("agents", "is_primary", "BOOLEAN DEFAULT 1"),
+        # Phase 3: Human-level connections — new user-level FK columns
+        # Old agent-level columns stay in DB (SQLite can't drop them) but are unused
+        ("connections", "user_a_id", "VARCHAR(16) REFERENCES users(id)"),
+        ("connections", "user_b_id", "VARCHAR(16) REFERENCES users(id)"),
+        ("invites", "from_user_id", "VARCHAR(16) REFERENCES users(id)"),
+        ("invites", "used_by_user_id", "VARCHAR(16) REFERENCES users(id)"),
+        ("permissions", "user_id", "VARCHAR(16) REFERENCES users(id)"),
     ]
 
     async with engine.begin() as conn:
