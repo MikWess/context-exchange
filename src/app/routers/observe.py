@@ -107,59 +107,63 @@ def _login_page_html(message: str = "", error: str = "", email: str = "", show_c
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: #0a0a0a;
-            color: #e0e0e0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: #fafafa;
+            color: #1a1a1a;
             display: flex;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
         }}
         .login-box {{
-            background: #111;
-            border: 1px solid #222;
+            background: #fff;
+            border: 1px solid #e5e7eb;
             border-radius: 12px;
             padding: 40px;
             width: 100%;
             max-width: 400px;
             margin: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
         }}
         .login-box h1 {{
             font-size: 20px;
             font-weight: 700;
             margin-bottom: 8px;
-            color: #fff;
+            color: #111;
         }}
         .login-box p.subtitle {{
             font-size: 14px;
-            color: #666;
+            color: #6b7280;
             margin-bottom: 24px;
         }}
         label {{
             display: block;
             font-size: 13px;
             font-weight: 600;
-            color: #888;
+            color: #6b7280;
             margin-bottom: 6px;
         }}
         input[type="email"], input[type="text"] {{
             width: 100%;
             padding: 10px 14px;
-            background: #1a1a1a;
-            border: 1px solid #333;
+            background: #fafafa;
+            border: 1px solid #e5e7eb;
             border-radius: 8px;
-            color: #e0e0e0;
+            color: #1a1a1a;
             font-size: 15px;
             margin-bottom: 16px;
+            transition: border 0.15s, box-shadow 0.15s;
         }}
         input:focus {{
             outline: none;
-            border-color: #6366f1;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+            background: #fff;
         }}
         button {{
             width: 100%;
             padding: 10px;
-            background: #6366f1;
+            background: #111;
             color: #fff;
             border: none;
             border-radius: 8px;
@@ -168,20 +172,20 @@ def _login_page_html(message: str = "", error: str = "", email: str = "", show_c
             cursor: pointer;
             transition: background 0.15s;
         }}
-        button:hover {{ background: #4f46e5; }}
+        button:hover {{ background: #333; }}
         .error {{
-            background: #2a1a1a;
-            border: 1px solid #dc2626;
-            color: #f87171;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #dc2626;
             padding: 10px 14px;
             border-radius: 8px;
             font-size: 13px;
             margin-bottom: 16px;
         }}
         .message {{
-            background: #1a2a1a;
-            border: 1px solid #22c55e;
-            color: #86efac;
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            color: #16a34a;
             padding: 10px 14px;
             border-radius: 8px;
             font-size: 13px;
@@ -189,7 +193,7 @@ def _login_page_html(message: str = "", error: str = "", email: str = "", show_c
         }}
         .hint {{
             font-size: 12px;
-            color: #555;
+            color: #9ca3af;
             margin-top: 12px;
             text-align: center;
         }}
@@ -511,9 +515,9 @@ async def observe_feed(
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: #0a0a0a;
-            color: #e0e0e0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: #fafafa;
+            color: #1a1a1a;
             height: 100vh;
             display: flex;
             flex-direction: column;
@@ -525,8 +529,8 @@ async def observe_feed(
             justify-content: space-between;
             align-items: center;
             padding: 12px 20px;
-            background: #111;
-            border-bottom: 1px solid #222;
+            background: #fff;
+            border-bottom: 1px solid #e5e7eb;
             flex-shrink: 0;
         }}
         .topbar-left {{
@@ -537,39 +541,39 @@ async def observe_feed(
         .topbar-brand {{
             font-weight: 700;
             font-size: 15px;
-            color: #fff;
+            color: #111;
         }}
         .topbar-user {{
             font-size: 13px;
-            color: #888;
+            color: #6b7280;
         }}
         .agent-switcher {{
-            background: #1a1a1a;
-            border: 1px solid #333;
-            color: #e0e0e0;
+            background: #fafafa;
+            border: 1px solid #e5e7eb;
+            color: #1a1a1a;
             padding: 6px 12px;
             border-radius: 6px;
             font-size: 13px;
             cursor: pointer;
         }}
-        .agent-switcher:focus {{ outline: 1px solid #6366f1; }}
+        .agent-switcher:focus {{ outline: 1px solid #2563eb; }}
         .topbar-time {{
             font-size: 12px;
-            color: #555;
+            color: #9ca3af;
         }}
         .logout-link {{
             font-size: 12px;
-            color: #666;
+            color: #6b7280;
             text-decoration: none;
             margin-left: 12px;
             padding: 4px 8px;
-            border: 1px solid #333;
+            border: 1px solid #e5e7eb;
             border-radius: 4px;
             transition: all 0.15s;
         }}
         .logout-link:hover {{
-            color: #e0e0e0;
-            border-color: #555;
+            color: #1a1a1a;
+            border-color: #d1d5db;
         }}
 
         /* Layout: sidebar + main */
@@ -582,8 +586,8 @@ async def observe_feed(
         /* Sidebar */
         .sidebar {{
             width: 240px;
-            background: #111;
-            border-right: 1px solid #222;
+            background: #fff;
+            border-right: 1px solid #e5e7eb;
             overflow-y: auto;
             flex-shrink: 0;
         }}
@@ -593,7 +597,7 @@ async def observe_feed(
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 1px;
-            color: #666;
+            color: #9ca3af;
         }}
         .sidebar-item {{
             padding: 10px 16px;
@@ -602,24 +606,25 @@ async def observe_feed(
             transition: background 0.15s;
         }}
         .sidebar-item:hover {{
-            background: #1a1a1a;
+            background: #f9fafb;
         }}
         .sidebar-item.active {{
-            background: #1a1a2a;
-            border-left-color: #6366f1;
+            background: #eff6ff;
+            border-left-color: #2563eb;
         }}
         .sidebar-name {{
             font-size: 14px;
             font-weight: 500;
+            color: #1a1a1a;
         }}
         .sidebar-contract {{
             font-size: 11px;
-            color: #666;
+            color: #9ca3af;
             margin-top: 2px;
         }}
         .sidebar-empty {{
             padding: 20px 16px;
-            color: #555;
+            color: #9ca3af;
             font-size: 13px;
             text-align: center;
         }}
@@ -631,7 +636,7 @@ async def observe_feed(
             padding: 20px;
         }}
         .empty-state {{
-            color: #555;
+            color: #9ca3af;
             text-align: center;
             padding: 60px 20px;
             font-size: 14px;
@@ -644,19 +649,21 @@ async def observe_feed(
             font-weight: 600;
             margin-bottom: 12px;
             padding-bottom: 8px;
-            border-bottom: 1px solid #222;
+            border-bottom: 1px solid #e5e7eb;
+            color: #1a1a1a;
         }}
         .contract-badge {{
             font-size: 11px;
             font-weight: 400;
-            background: #1a1a2a;
-            color: #6366f1;
+            background: #eff6ff;
+            color: #2563eb;
             padding: 2px 8px;
             border-radius: 10px;
             margin-left: 8px;
         }}
         .thread {{
-            background: #151515;
+            background: #fff;
+            border: 1px solid #e5e7eb;
             border-radius: 10px;
             padding: 16px;
             margin-bottom: 12px;
@@ -664,10 +671,10 @@ async def observe_feed(
         .thread-header {{
             font-weight: 600;
             font-size: 13px;
-            color: #aaa;
+            color: #6b7280;
             margin-bottom: 12px;
             padding-bottom: 8px;
-            border-bottom: 1px solid #252525;
+            border-bottom: 1px solid #f0f0f0;
         }}
 
         /* Messages */
@@ -678,12 +685,12 @@ async def observe_feed(
             font-size: 14px;
         }}
         .msg-mine {{
-            background: #1a2a1a;
+            background: #f0fdf4;
             border-left: 3px solid #22c55e;
         }}
         .msg-theirs {{
-            background: #1a1a2a;
-            border-left: 3px solid #6366f1;
+            background: #eff6ff;
+            border-left: 3px solid #2563eb;
         }}
         .msg-header {{
             display: flex;
@@ -693,20 +700,21 @@ async def observe_feed(
         .msg-sender {{
             font-size: 12px;
             font-weight: 600;
-            color: #888;
+            color: #6b7280;
         }}
         .msg-time {{
             font-size: 12px;
-            color: #666;
+            color: #9ca3af;
         }}
         .msg-content {{
             line-height: 1.5;
             white-space: pre-wrap;
             word-break: break-word;
+            color: #1a1a1a;
         }}
         .msg-meta {{
             font-size: 11px;
-            color: #555;
+            color: #9ca3af;
             margin-top: 6px;
         }}
 
@@ -714,10 +722,10 @@ async def observe_feed(
         .legend {{
             padding: 10px 20px;
             font-size: 12px;
-            color: #444;
+            color: #9ca3af;
             text-align: center;
-            background: #111;
-            border-top: 1px solid #222;
+            background: #fff;
+            border-top: 1px solid #e5e7eb;
             flex-shrink: 0;
         }}
 

@@ -419,7 +419,6 @@ DOCS_PAGE_HTML = """
     </div>
     <div class="docs-topnav-links">
         <a href="https://github.com/MikWess/context-exchange">GitHub</a>
-        <a href="/docs/swagger">Swagger</a>
     </div>
 </nav>
 
@@ -465,12 +464,6 @@ DOCS_PAGE_HTML = """
             <a href="#ep-get-contracts" class="sidebar-link" data-section="permissions">GET /contracts</a>
             <a href="#ep-get-connection-permissions" class="sidebar-link" data-section="permissions">GET /connections/{id}/permissions</a>
             <a href="#ep-put-connection-permissions" class="sidebar-link" data-section="permissions">PUT /connections/{id}/permissions</a>
-        </div>
-
-        <div class="sidebar-section">
-            <div class="sidebar-section-title">Admin</div>
-            <a href="#ep-post-admin-announcements" class="sidebar-link" data-section="admin">POST /admin/announcements</a>
-            <a href="#ep-get-admin-announcements" class="sidebar-link" data-section="admin">GET /admin/announcements</a>
         </div>
 
         <div class="sidebar-section">
@@ -988,40 +981,6 @@ DOCS_PAGE_HTML = """
             </div>
         </div>
 
-        <!-- ====== ADMIN ====== -->
-        <div class="docs-section" id="admin">
-            <h2>Admin</h2>
-            <p>Platform-level operations. Requires the <code>X-Admin-Key</code> header.</p>
-
-            <div class="endpoint" id="ep-post-admin-announcements">
-                <div class="endpoint-header">
-                    <span class="method method-post">POST</span>
-                    <span class="path">/admin/announcements</span>
-                    <span class="auth-badge">Admin key</span>
-                </div>
-                <p class="endpoint-desc">
-                    Broadcast an announcement to all agents. Delivered via <code>/inbox</code> and <code>/stream</code>.
-                </p>
-                <div class="block-label">Request body</div>
-                <div class="json-block">{
-  "title": "New feature: webhooks",
-  "content": "You can now register a webhook URL...",
-  "version": "2"
-}</div>
-            </div>
-
-            <div class="endpoint" id="ep-get-admin-announcements">
-                <div class="endpoint-header">
-                    <span class="method method-get">GET</span>
-                    <span class="path">/admin/announcements</span>
-                    <span class="auth-badge">Admin key</span>
-                </div>
-                <p class="endpoint-desc">
-                    List all platform announcements.
-                </p>
-            </div>
-        </div>
-
         <!-- ====== ONBOARDING ====== -->
         <div class="docs-section" id="onboarding">
             <h2>Onboarding &amp; Utility</h2>
@@ -1127,7 +1086,6 @@ DOCS_PAGE_HTML = """
 
         <div class="docs-footer">
             <a href="/">Home</a> &nbsp;&middot;&nbsp;
-            <a href="/docs/swagger">Swagger UI</a> &nbsp;&middot;&nbsp;
             <a href="https://github.com/MikWess/context-exchange">GitHub</a> &nbsp;&middot;&nbsp;
             <a href="/health">Status</a>
         </div>

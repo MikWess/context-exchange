@@ -49,7 +49,7 @@ app.include_router(messages.router)
 app.include_router(onboard.router)
 app.include_router(observe.router)
 app.include_router(permissions.router)
-app.include_router(admin.router)
+app.include_router(admin.router, include_in_schema=False)  # Hide admin from public docs
 app.include_router(client.router)
 
 
