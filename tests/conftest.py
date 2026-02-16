@@ -112,6 +112,28 @@ async def second_agent(client):
     )
 
 
+async def _login_and_verify(client, email):
+    """
+    Helper: go through the 2-step login flow (login → verify).
+    In test mode (no RESEND_API_KEY), the verification code is in the response message.
+    Returns the login/verify response JSON (token, user_id, name).
+    """
+    # Step 1: Login — sends verification code
+    login_resp = await client.post("/auth/login", json={"email": email})
+    assert login_resp.status_code == 200
+    login_data = login_resp.json()
+    # Dev mode message format: "Dev mode — your verification code is: 123456. ..."
+    code = login_data["message"].split("code is: ")[1].split(".")[0]
+
+    # Step 2: Verify — returns JWT
+    verify_resp = await client.post("/auth/login/verify", json={
+        "email": email,
+        "code": code,
+    })
+    assert verify_resp.status_code == 200
+    return verify_resp.json()
+
+
 def auth_header(api_key: str) -> dict:
     """Helper to build the Authorization header."""
     return {"Authorization": f"Bearer {api_key}"}

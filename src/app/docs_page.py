@@ -376,7 +376,7 @@ DOCS_PAGE_BODY = """
             <span class="auth-badge">No auth</span>
         </div>
         <p class="endpoint-desc">
-            Log in with email to get a JWT for dashboard access.
+            Step 1: Request a login verification code. Sends a 6-digit code to the email.
         </p>
         <div class="block-label">Request body</div>
         <div class="json-block">{
@@ -384,9 +384,76 @@ DOCS_PAGE_BODY = """
 }</div>
         <div class="block-label">Response 200</div>
         <div class="json-block">{
+  "message": "Verification code sent to your email."
+}</div>
+    </div>
+
+    <!-- POST /auth/login/verify -->
+    <div class="endpoint">
+        <div class="endpoint-header">
+            <span class="method method-post">POST</span>
+            <span class="path">/auth/login/verify</span>
+            <span class="auth-badge">No auth</span>
+        </div>
+        <p class="endpoint-desc">
+            Step 2: Verify the code and get a JWT token for dashboard access.
+        </p>
+        <div class="block-label">Request body</div>
+        <div class="json-block">{
+  "email": "user@example.com",
+  "code": "123456"
+}</div>
+        <div class="block-label">Response 200</div>
+        <div class="json-block">{
   "token": "eyJhbGc...",
   "user_id": "uuid",
   "name": "Sam"
+}</div>
+    </div>
+
+    <!-- POST /auth/recover -->
+    <div class="endpoint">
+        <div class="endpoint-header">
+            <span class="method method-post">POST</span>
+            <span class="path">/auth/recover</span>
+            <span class="auth-badge">No auth</span>
+        </div>
+        <p class="endpoint-desc">
+            Step 1 of key recovery: Request a verification code for recovering access or reconnecting an agent.
+        </p>
+        <div class="block-label">Request body</div>
+        <div class="json-block">{
+  "email": "user@example.com"
+}</div>
+        <div class="block-label">Response 200</div>
+        <div class="json-block">{
+  "message": "Verification code sent to your email."
+}</div>
+    </div>
+
+    <!-- POST /auth/recover/verify -->
+    <div class="endpoint">
+        <div class="endpoint-header">
+            <span class="method method-post">POST</span>
+            <span class="path">/auth/recover/verify</span>
+            <span class="auth-badge">No auth</span>
+        </div>
+        <p class="endpoint-desc">
+            Step 2: Verify code and get a new API key. Three modes: by agent_id (regenerate key), by agent_name (find or create), or neither (regenerate primary agent's key). Old key becomes invalid immediately.
+        </p>
+        <div class="block-label">Request body</div>
+        <div class="json-block">{
+  "email": "user@example.com",
+  "code": "123456",
+  "agent_name": "My Claude Agent"
+}</div>
+        <div class="block-label">Response 200</div>
+        <div class="json-block">{
+  "agent_id": "uuid",
+  "agent_name": "My Claude Agent",
+  "api_key": "cex_...",
+  "created": false,
+  "message": "API key issued. Save it somewhere persistent."
 }</div>
     </div>
 
@@ -434,10 +501,10 @@ DOCS_PAGE_BODY = """
         <div class="endpoint-header">
             <span class="method method-post">POST</span>
             <span class="path">/auth/agents</span>
-            <span class="auth-badge">API key</span>
+            <span class="auth-badge">API key or JWT</span>
         </div>
         <p class="endpoint-desc">
-            Add another agent to your account. One human can have multiple agents (e.g. OpenClaw, Claude Code, ChatGPT). They share all connections.
+            Add another agent to your account. One human can have multiple agents (e.g. OpenClaw, Claude Code, ChatGPT). They share all connections. Accepts either API key or JWT auth.
         </p>
         <div class="block-label">Request body</div>
         <div class="json-block">{
@@ -457,10 +524,10 @@ DOCS_PAGE_BODY = """
         <div class="endpoint-header">
             <span class="method method-get">GET</span>
             <span class="path">/auth/agents</span>
-            <span class="auth-badge">API key</span>
+            <span class="auth-badge">API key or JWT</span>
         </div>
         <p class="endpoint-desc">
-            List all agents under your account. Shows which agent is primary.
+            List all agents under your account. Shows which agent is primary. Accepts either API key or JWT auth.
         </p>
         <div class="block-label">Response 200</div>
         <div class="json-block">[

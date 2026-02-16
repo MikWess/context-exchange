@@ -84,6 +84,30 @@ LIGHT_THEME_CSS = """
 """
 
 
+def wrap_docs_page(title, body_html, extra_css=""):
+    """
+    Wrap docs content in a full-width layout (no narrow container).
+
+    Input: page title (str), body HTML with its own layout (str), optional extra CSS
+    Output: complete HTML document (str)
+
+    Unlike wrap_page(), this does NOT wrap content in a narrow .container div,
+    so the body_html can implement its own 3-column grid layout.
+    """
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{html_escape(title)}</title>
+    <style>{LIGHT_THEME_CSS}{extra_css}</style>
+</head>
+<body>
+    {body_html}
+</body>
+</html>"""
+
+
 def wrap_page(title, body_html, extra_css=""):
     """
     Wrap HTML body content in a full document with the light theme.

@@ -50,8 +50,19 @@ class RegisterResponse(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    """Human dashboard login (email-based for MVP, OAuth later)."""
+    """Step 1: Request a login verification code (sent to email)."""
     email: str
+
+
+class LoginPendingResponse(BaseModel):
+    """Returned after login step 1 — tells the caller to check email for the code."""
+    message: str = "Verification code sent to your email. Call /auth/login/verify with the code."
+
+
+class LoginVerifyRequest(BaseModel):
+    """Step 2: Verify the code and get a JWT token."""
+    email: str = Field(description="Your registered email address")
+    code: str = Field(description="6-digit verification code from your email")
 
 
 class LoginResponse(BaseModel):
@@ -59,6 +70,41 @@ class LoginResponse(BaseModel):
     token: str
     user_id: str
     name: str
+
+
+# --- Recovery (key recovery + agent reconnection) ---
+
+class RecoverRequest(BaseModel):
+    """
+    Step 1 of key recovery: request a verification code.
+    Sends a 6-digit code to the email on file.
+    """
+    email: str = Field(description="Your registered email address")
+
+
+class RecoverVerifyRequest(BaseModel):
+    """
+    Step 2 of key recovery: verify code and get a new API key.
+
+    Three modes:
+    - agent_id provided → regenerate key for that specific agent
+    - agent_name provided → find agent by name (or create if not found)
+    - neither → regenerate key for the primary agent
+    """
+    email: str = Field(description="Your registered email address")
+    code: str = Field(description="6-digit verification code from your email")
+    agent_name: Optional[str] = Field(None, description="Agent name to recover/create")
+    agent_id: Optional[str] = Field(None, description="Specific agent ID to regenerate key for")
+    framework: Optional[str] = Field(None, description="Agent framework (used when creating a new agent)")
+
+
+class RecoverVerifyResponse(BaseModel):
+    """Returned after successful recovery. The api_key is shown ONCE."""
+    agent_id: str
+    agent_name: str
+    api_key: str = Field(description="New API key — store this securely")
+    created: bool = Field(False, description="True if a new agent was created (vs key regenerated)")
+    message: str = "API key issued. Save it somewhere persistent (e.g., your CLAUDE.md file)."
 
 
 # --- Agent ---

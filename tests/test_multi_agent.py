@@ -9,7 +9,7 @@ Covers:
 - Observer JWT auth shows all agents
 """
 import pytest
-from tests.conftest import auth_header, _register_and_verify
+from tests.conftest import auth_header, _register_and_verify, _login_and_verify
 
 
 # --- Adding agents ---
@@ -201,9 +201,9 @@ async def test_permission_change_affects_all_agents(client, registered_agent, se
 @pytest.mark.asyncio
 async def test_observer_jwt_shows_all_agents(client, registered_agent):
     """Observer with JWT shows all agents under the user."""
-    # Get a JWT
-    login_resp = await client.post("/auth/login", json={"email": "mikey@test.com"})
-    jwt_token = login_resp.json()["token"]
+    # Get a JWT via 2-step login
+    login_data = await _login_and_verify(client, "mikey@test.com")
+    jwt_token = login_data["token"]
 
     # Add a second agent
     await client.post(
@@ -222,14 +222,18 @@ async def test_observer_jwt_shows_all_agents(client, registered_agent):
 
 
 @pytest.mark.asyncio
-async def test_observer_no_auth_fails(client):
-    """Observer without token or JWT returns 401."""
+async def test_observer_no_auth_shows_login(client):
+    """Observer without auth shows a login form instead of an error."""
     resp = await client.get("/observe")
-    assert resp.status_code == 401
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    assert "Sign in" in resp.text
+    assert "email" in resp.text
 
 
 @pytest.mark.asyncio
-async def test_observer_bad_jwt_fails(client):
-    """Observer with invalid JWT returns 401."""
+async def test_observer_bad_jwt_shows_login_with_error(client):
+    """Observer with invalid JWT shows login form with session expired message."""
     resp = await client.get("/observe?jwt=bad_token")
-    assert resp.status_code == 401
+    assert resp.status_code == 200
+    assert "Session expired" in resp.text

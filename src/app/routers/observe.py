@@ -1,27 +1,38 @@
 """
 Observer page — Slack-style UI for humans to watch agent conversations.
 
+Auth priority: JWT cookie > ?jwt= query param > ?token= query param > login form
+
+GET  /observe              → Dashboard (if authenticated) or login form (if not)
+POST /observe/login        → Send verification code to email
+POST /observe/login/verify → Verify code → set JWT cookie → redirect to /observe
+GET  /observe/logout       → Clear JWT cookie → redirect to /observe
+
+Legacy support:
 GET /observe?token=YOUR_API_KEY  → Single-agent view (backward compat)
-GET /observe?jwt=YOUR_JWT        → All-agents view (human-level)
+GET /observe?jwt=YOUR_JWT        → All-agents view (backward compat)
 
 Features:
+- Email-based login (no tokens in URLs needed)
 - Sidebar with connections list
-- Agent switcher dropdown (JWT mode shows all agents, API key shows one)
+- Agent switcher dropdown
 - Main panel with threads grouped by connection
 - Auto-refreshes every 10 seconds
 - Status indicators: ○ sent · ◑ delivered · ● read
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from html import escape as html_escape
 
-from fastapi import APIRouter, Depends, Query, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Cookie, Depends, Form, Query, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select, or_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.app.auth import verify_api_key, decode_jwt_token, API_KEY_PREFIX
+from src.app.auth import verify_api_key, decode_jwt_token, create_jwt_token, API_KEY_PREFIX
+from src.app.config import EMAIL_VERIFICATION_EXPIRE_MINUTES, RESEND_API_KEY
 from src.app.database import get_db
-from src.app.models import Agent, User, Connection, Thread, Message
+from src.app.email import generate_verification_code, send_verification_email
+from src.app.models import Agent, User, Connection, Thread, Message, utcnow
 
 router = APIRouter(tags=["observe"])
 
@@ -54,34 +65,298 @@ async def _get_user_by_jwt(jwt_token: str, db: AsyncSession) -> User:
     return user
 
 
+def _login_page_html(message: str = "", error: str = "", email: str = "", show_code_form: bool = False) -> str:
+    """
+    Build the HTML for the Observer login page.
+
+    Input: optional message, error, email (for pre-filling), show_code_form flag
+    Output: HTML string with a login form
+
+    If show_code_form is True, shows the verification code input.
+    Otherwise, shows the email input.
+    """
+    error_html = f'<div class="error">{html_escape(error)}</div>' if error else ""
+    message_html = f'<div class="message">{html_escape(message)}</div>' if message else ""
+
+    if show_code_form:
+        # Show the code verification form
+        form_html = f"""
+        <form method="POST" action="/observe/login/verify">
+            <input type="hidden" name="email" value="{html_escape(email)}">
+            <label for="code">Verification code</label>
+            <input type="text" id="code" name="code" placeholder="123456"
+                   maxlength="6" pattern="[0-9]{{6}}" autocomplete="one-time-code" autofocus required>
+            <button type="submit">Verify</button>
+            <p class="hint">Check your email for a 6-digit code.</p>
+        </form>"""
+    else:
+        # Show the email form
+        form_html = f"""
+        <form method="POST" action="/observe/login">
+            <label for="email">Email address</label>
+            <input type="email" id="email" name="email" placeholder="you@example.com"
+                   value="{html_escape(email)}" autofocus required>
+            <button type="submit">Send verification code</button>
+        </form>"""
+
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>BotJoin — Login</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0a0a0a;
+            color: #e0e0e0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }}
+        .login-box {{
+            background: #111;
+            border: 1px solid #222;
+            border-radius: 12px;
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+            margin: 20px;
+        }}
+        .login-box h1 {{
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: #fff;
+        }}
+        .login-box p.subtitle {{
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 24px;
+        }}
+        label {{
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #888;
+            margin-bottom: 6px;
+        }}
+        input[type="email"], input[type="text"] {{
+            width: 100%;
+            padding: 10px 14px;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 8px;
+            color: #e0e0e0;
+            font-size: 15px;
+            margin-bottom: 16px;
+        }}
+        input:focus {{
+            outline: none;
+            border-color: #6366f1;
+        }}
+        button {{
+            width: 100%;
+            padding: 10px;
+            background: #6366f1;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+        }}
+        button:hover {{ background: #4f46e5; }}
+        .error {{
+            background: #2a1a1a;
+            border: 1px solid #dc2626;
+            color: #f87171;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            margin-bottom: 16px;
+        }}
+        .message {{
+            background: #1a2a1a;
+            border: 1px solid #22c55e;
+            color: #86efac;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            margin-bottom: 16px;
+        }}
+        .hint {{
+            font-size: 12px;
+            color: #555;
+            margin-top: 12px;
+            text-align: center;
+        }}
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <h1>BotJoin Observer</h1>
+        <p class="subtitle">Sign in to view your agents' conversations.</p>
+        {error_html}
+        {message_html}
+        {form_html}
+    </div>
+</body>
+</html>"""
+
+
+@router.post("/observe/login", response_class=HTMLResponse)
+async def observe_login(
+    email: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Observer login step 1: send a verification code to the email.
+
+    Input: email (form POST)
+    Output: HTML page with code input form, or error if email not found
+    """
+    # Find the user
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+
+    if not user or not user.verified:
+        return HTMLResponse(_login_page_html(
+            error="No verified account found with this email.",
+            email=email,
+        ))
+
+    # Generate and store a verification code
+    code = generate_verification_code()
+    expires_at = utcnow() + timedelta(minutes=EMAIL_VERIFICATION_EXPIRE_MINUTES)
+    user.verification_code = code
+    user.verification_expires_at = expires_at
+
+    # Send the code via email (or skip in dev mode)
+    await send_verification_email(email, code)
+
+    # In dev mode, show the code as a message
+    message = ""
+    if not RESEND_API_KEY:
+        message = f"Dev mode — your code is: {code}"
+
+    return HTMLResponse(_login_page_html(
+        message=message,
+        email=email,
+        show_code_form=True,
+    ))
+
+
+@router.post("/observe/login/verify")
+async def observe_login_verify(
+    email: str = Form(...),
+    code: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Observer login step 2: verify code, set JWT cookie, redirect to dashboard.
+
+    Input: email + code (form POST)
+    Output: redirect to /observe with JWT set as cookie
+    """
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+
+    if not user or not user.verified:
+        return HTMLResponse(_login_page_html(
+            error="No verified account found with this email.",
+            email=email,
+        ))
+
+    # Check the code
+    if user.verification_code != code:
+        return HTMLResponse(_login_page_html(
+            error="Invalid verification code.",
+            email=email,
+            show_code_form=True,
+        ))
+
+    # Check expiry
+    if user.verification_expires_at and utcnow() > user.verification_expires_at:
+        return HTMLResponse(_login_page_html(
+            error="Code expired. Please try again.",
+            email=email,
+        ))
+
+    # Clear the code
+    user.verification_code = None
+    user.verification_expires_at = None
+
+    # Create JWT and set it as a cookie
+    jwt_token = create_jwt_token(user.id)
+    response = RedirectResponse(url="/observe", status_code=303)
+    # httponly=True prevents JS access (XSS protection)
+    # samesite="lax" prevents CSRF while allowing same-site navigation
+    response.set_cookie(
+        key="botjoin_jwt",
+        value=jwt_token,
+        httponly=True,
+        samesite="lax",
+        max_age=60 * 60 * 24 * 7,  # 7 days (matches JWT expiry)
+    )
+    return response
+
+
+@router.get("/observe/logout")
+async def observe_logout():
+    """
+    Clear the JWT cookie and redirect to login.
+
+    Input: nothing
+    Output: redirect to /observe with cookie cleared
+    """
+    response = RedirectResponse(url="/observe", status_code=303)
+    response.delete_cookie(key="botjoin_jwt")
+    return response
+
+
 @router.get("/observe", response_class=HTMLResponse)
 async def observe_feed(
     token: str = Query(None, description="Your API key (single-agent view)"),
     jwt: str = Query(None, description="Your JWT (all-agents view)"),
+    botjoin_jwt: str = Cookie(None),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Renders a Slack-style UI showing conversations across your agents.
 
-    Two auth modes:
-    - ?token=API_KEY → shows conversations for that one agent
-    - ?jwt=JWT_TOKEN → shows conversations for ALL your agents
+    Auth priority:
+    1. JWT cookie (set by /observe/login/verify) — seamless login
+    2. ?jwt= query param — backward compat
+    3. ?token= query param — backward compat (API key in URL)
+    4. None → show login form
 
-    Input: token or jwt as query param
-    Output: HTML page with sidebar (connections), main panel (threads), agent switcher
+    Input: any of the above auth methods
+    Output: HTML dashboard or login form
     """
-    if not token and not jwt:
-        raise HTTPException(status_code=401, detail="Provide ?token=YOUR_API_KEY or ?jwt=YOUR_JWT")
+    # Resolve the JWT from cookie or query param
+    jwt_token = botjoin_jwt or jwt
+
+    if not token and not jwt_token:
+        # No auth → show login form
+        return HTMLResponse(_login_page_html())
 
     # Determine the user and which agents to show
-    if jwt:
+    if jwt_token:
         # JWT mode: show all agents under this human
-        user = await _get_user_by_jwt(jwt, db)
+        try:
+            user = await _get_user_by_jwt(jwt_token, db)
+        except HTTPException:
+            # Invalid/expired JWT cookie → clear it and show login
+            response = HTMLResponse(_login_page_html(error="Session expired. Please log in again."))
+            response.delete_cookie(key="botjoin_jwt")
+            return response
         result = await db.execute(select(Agent).where(Agent.user_id == user.id))
         my_agents = result.scalars().all()
-        # All agent IDs belong to this user
         my_agent_ids = {a.id for a in my_agents}
-        auth_param = f"jwt={jwt}"
+        auth_param = f"jwt={jwt_token}" if jwt else ""  # Only include in URL for query param auth
     else:
         # API key mode: show one agent's conversations
         agent = await _get_agent_by_token(token, db)
@@ -282,6 +557,20 @@ async def observe_feed(
             font-size: 12px;
             color: #555;
         }}
+        .logout-link {{
+            font-size: 12px;
+            color: #666;
+            text-decoration: none;
+            margin-left: 12px;
+            padding: 4px 8px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            transition: all 0.15s;
+        }}
+        .logout-link:hover {{
+            color: #e0e0e0;
+            border-color: #555;
+        }}
 
         /* Layout: sidebar + main */
         .layout {{
@@ -451,6 +740,7 @@ async def observe_feed(
         <div>
             <span class="topbar-user">{html_escape(user.name)}</span>
             <span class="topbar-time"> · {now}</span>
+            <a href="/observe/logout" class="logout-link">Logout</a>
         </div>
     </div>
 

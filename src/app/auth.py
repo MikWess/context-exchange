@@ -71,30 +71,25 @@ def decode_jwt_token(token: str) -> Optional[str]:
         return None
 
 
-# --- FastAPI dependencies ---
+# --- Internal helpers ---
 
-async def get_current_agent(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-    db: AsyncSession = Depends(get_db),
-) -> Agent:
+async def _find_agent_by_key(token: str, db: AsyncSession) -> Agent:
     """
-    FastAPI dependency — authenticates an agent via API key.
-    Expects: Authorization: Bearer cex_<key>
+    Look up an agent by raw API key.
 
-    Returns the Agent ORM object if valid.
-    Raises 401 if the key is missing, malformed, or doesn't match any agent.
+    Input: raw API key string (must start with cex_)
+    Output: the Agent ORM object
+    Raises: 401 if key is invalid or not found
+
+    Scans all agents and checks the PBKDF2 hash. (Fine for MVP —
+    in prod with many agents, you'd want a key lookup table.)
     """
-    token = credentials.credentials
-
-    # Quick check: must start with our prefix
     if not token.startswith(API_KEY_PREFIX):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key format",
         )
 
-    # Look up all agents and check the key hash
-    # (In prod with many agents, you'd want a key lookup table. Fine for MVP.)
     result = await db.execute(select(Agent))
     agents = result.scalars().all()
 
@@ -108,6 +103,23 @@ async def get_current_agent(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid API key",
     )
+
+
+# --- FastAPI dependencies ---
+
+async def get_current_agent(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> Agent:
+    """
+    FastAPI dependency — authenticates an agent via API key.
+
+    Input: Authorization: Bearer cex_<key>
+    Output: the Agent ORM object
+
+    Raises 401 if the key is missing, malformed, or doesn't match any agent.
+    """
+    return await _find_agent_by_key(credentials.credentials, db)
 
 
 async def get_current_user(
@@ -134,3 +146,46 @@ async def get_current_user(
             detail="User not found",
         )
     return user
+
+
+async def get_current_user_flexible(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """
+    FastAPI dependency — accepts EITHER an API key OR a JWT.
+
+    Input: Bearer token (could be cex_... API key or a JWT string)
+    Output: the User who owns that token
+
+    How it works:
+    - Token starts with "cex_" → find the agent by key → return agent's user
+    - Otherwise → decode as JWT → return the user directly
+
+    Use this on endpoints where both agents (via API key) and humans
+    (via JWT) should be able to access the same functionality.
+    """
+    token = credentials.credentials
+
+    if token.startswith(API_KEY_PREFIX):
+        # API key path — find the agent, then load its human (User)
+        agent = await _find_agent_by_key(token, db)
+        result = await db.execute(select(User).where(User.id == agent.user_id))
+        return result.scalar_one()
+    else:
+        # JWT path — decode and look up the user directly
+        user_id = decode_jwt_token(token)
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+            )
+
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+            )
+        return user

@@ -22,6 +22,7 @@ from src.app.auth import (
     hash_api_key,
     create_jwt_token,
     get_current_agent,
+    get_current_user_flexible,
 )
 from src.app.config import EMAIL_VERIFICATION_EXPIRE_MINUTES, RESEND_API_KEY
 from src.app.database import get_db
@@ -33,12 +34,17 @@ from src.app.schemas import (
     RegisterResponse,
     VerifyRequest,
     LoginRequest,
+    LoginPendingResponse,
+    LoginVerifyRequest,
     LoginResponse,
     AgentProfile,
     AgentUpdateRequest,
     AddAgentRequest,
     AddAgentResponse,
     AgentInfo,
+    RecoverRequest,
+    RecoverVerifyRequest,
+    RecoverVerifyResponse,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -224,16 +230,16 @@ async def verify(req: VerifyRequest, db: AsyncSession = Depends(get_db)):
     )
 
 
-@router.post("/login", response_model=LoginResponse)
+@router.post("/login", response_model=LoginPendingResponse)
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     """
-    Login for the dashboard.
+    Step 1: Request a login verification code.
 
     Input: email
-    Output: JWT token
+    Output: { message } + sends 6-digit code to email
 
-    MVP: email-only login (no password). Good enough for dev.
-    Will add OAuth (Google) for production.
+    Secured with email verification — no more "anyone who knows your
+    email gets a JWT." The caller must then verify with /auth/login/verify.
     """
     result = await db.execute(select(User).where(User.email == req.email))
     user = result.scalar_one_or_none()
@@ -248,6 +254,62 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
             detail="Email not verified. Complete verification first.",
         )
 
+    # Generate a code and send it
+    code = generate_verification_code()
+    expires_at = utcnow() + timedelta(minutes=EMAIL_VERIFICATION_EXPIRE_MINUTES)
+    user.verification_code = code
+    user.verification_expires_at = expires_at
+
+    await send_verification_email(req.email, code)
+
+    # In dev mode, include the code for testing
+    message = "Verification code sent to your email. Call /auth/login/verify with the code."
+    if not RESEND_API_KEY:
+        message = f"Dev mode — your verification code is: {code}. Call /auth/login/verify to get your JWT."
+
+    return LoginPendingResponse(message=message)
+
+
+@router.post("/login/verify", response_model=LoginResponse)
+async def login_verify(req: LoginVerifyRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Step 2: Verify code and get a JWT token.
+
+    Input: email + 6-digit code
+    Output: JWT token + user info
+
+    The JWT can be used for:
+    - Observer dashboard (GET /observe with cookie or ?jwt=)
+    - Agent management (POST/GET /auth/agents)
+    """
+    result = await db.execute(select(User).where(User.email == req.email))
+    user = result.scalar_one_or_none()
+
+    if not user or not user.verified:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No verified account found with this email.",
+        )
+
+    # Check the verification code
+    if user.verification_code != req.code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid verification code.",
+        )
+
+    # Check expiry
+    if user.verification_expires_at and utcnow() > user.verification_expires_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification code has expired. Call /auth/login again to get a new code.",
+        )
+
+    # Clear the code so it can't be reused
+    user.verification_code = None
+    user.verification_expires_at = None
+
+    # Issue JWT
     token = create_jwt_token(user.id)
     return LoginResponse(token=token, user_id=user.id, name=user.name)
 
@@ -295,18 +357,18 @@ async def update_me(
 @router.post("/agents", response_model=AddAgentResponse)
 async def add_agent(
     req: AddAgentRequest,
-    agent: Agent = Depends(get_current_agent),
+    user: User = Depends(get_current_user_flexible),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Add another agent to your account.
 
-    Input: API key (existing agent) + agent_name, optional framework/webhook_url
+    Input: API key OR JWT + agent_name, optional framework/webhook_url
     Output: new agent_id + API key (shown ONCE)
 
-    Authenticated with an existing agent's API key. The new agent is linked
-    to the same human (user_id). The new agent is NOT primary — only the
-    first agent is primary by default.
+    Accepts either an existing agent's API key or a JWT token (from login).
+    The new agent is linked to the same human (user_id). The new agent is
+    NOT primary — only the first agent is primary by default.
     """
     # Validate webhook URL if provided (SSRF protection)
     if req.webhook_url:
@@ -318,7 +380,7 @@ async def add_agent(
 
     # Create new agent under the same user, not primary
     new_agent = Agent(
-        user_id=agent.user_id,
+        user_id=user.id,
         name=req.agent_name,
         api_key_hash=key_hash,
         framework=req.framework,
@@ -336,19 +398,182 @@ async def add_agent(
 
 @router.get("/agents", response_model=list)
 async def list_agents(
-    agent: Agent = Depends(get_current_agent),
+    user: User = Depends(get_current_user_flexible),
     db: AsyncSession = Depends(get_db),
 ):
     """
     List all agents under your account.
 
-    Input: API key (any of your agents)
+    Input: API key (any of your agents) OR JWT token
     Output: list of AgentInfo for all agents belonging to the same human
 
     Shows which agents are primary, their frameworks, and status.
     """
     result = await db.execute(
-        select(Agent).where(Agent.user_id == agent.user_id)
+        select(Agent).where(Agent.user_id == user.id)
     )
     agents = result.scalars().all()
     return [AgentInfo.model_validate(a) for a in agents]
+
+
+# --- Key Recovery / Agent Reconnection ---
+
+
+@router.post("/recover")
+async def recover(req: RecoverRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Step 1: Request a verification code for key recovery.
+
+    Input: email (must be a verified account)
+    Output: { message } + sends 6-digit code to email
+
+    This is the universal "get back in" endpoint. Works for:
+    - Lost API key → recover with agent_name or agent_id
+    - Ephemeral agent reconnecting → recover with agent_name
+    - Adding a new agent via email → recover with new agent_name
+
+    Reuses the same verification_code/verification_expires_at fields
+    on the User model that registration uses.
+    """
+    # Find the user by email — must exist and be verified
+    result = await db.execute(select(User).where(User.email == req.email))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No account found with this email.",
+        )
+    if not user.verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email not verified. Complete registration first.",
+        )
+
+    # Generate a 6-digit code and store it on the user
+    code = generate_verification_code()
+    expires_at = utcnow() + timedelta(minutes=EMAIL_VERIFICATION_EXPIRE_MINUTES)
+    user.verification_code = code
+    user.verification_expires_at = expires_at
+
+    # Send the code via email (or skip in dev mode)
+    await send_verification_email(req.email, code)
+
+    # In dev mode (no Resend key), include the code so agents can auto-recover
+    message = "Verification code sent to your email. Call /auth/recover/verify with the code."
+    if not RESEND_API_KEY:
+        message = f"Dev mode — your verification code is: {code}. Call /auth/recover/verify to get your API key."
+
+    return {"message": message}
+
+
+@router.post("/recover/verify", response_model=RecoverVerifyResponse)
+async def recover_verify(req: RecoverVerifyRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Step 2: Verify code and get a new API key.
+
+    Input: email, 6-digit code, optional agent_name or agent_id
+    Output: { agent_id, agent_name, api_key, created }
+
+    Three modes:
+    1. agent_id provided → regenerate key for that specific agent (old key dies)
+    2. agent_name provided → find agent by name under this user:
+       - Found → regenerate key (old key dies)
+       - Not found → create new agent with that name
+    3. Neither → regenerate key for the primary agent
+
+    The old API key becomes invalid immediately when regenerated.
+    """
+    # Find and validate the user
+    result = await db.execute(select(User).where(User.email == req.email))
+    user = result.scalar_one_or_none()
+
+    if not user or not user.verified:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No verified account found with this email.",
+        )
+
+    # Check the verification code
+    if user.verification_code != req.code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid verification code.",
+        )
+
+    # Check expiry
+    if user.verification_expires_at and utcnow() > user.verification_expires_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification code has expired. Call /auth/recover again to get a new code.",
+        )
+
+    # Clear the code so it can't be reused
+    user.verification_code = None
+    user.verification_expires_at = None
+
+    # Determine which agent to recover/create
+    created = False
+
+    if req.agent_id:
+        # Mode 1: specific agent by ID
+        result = await db.execute(
+            select(Agent).where(Agent.id == req.agent_id, Agent.user_id == user.id)
+        )
+        agent = result.scalar_one_or_none()
+        if not agent:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Agent not found under your account.",
+            )
+
+    elif req.agent_name:
+        # Mode 2: find by name, or create if not found
+        result = await db.execute(
+            select(Agent).where(Agent.name == req.agent_name, Agent.user_id == user.id)
+        )
+        agent = result.scalar_one_or_none()
+
+        if not agent:
+            # Create a new agent with this name
+            raw_key = generate_api_key()
+            key_hash = hash_api_key(raw_key)
+            agent = Agent(
+                user_id=user.id,
+                name=req.agent_name,
+                api_key_hash=key_hash,
+                framework=req.framework,
+                is_primary=False,
+            )
+            db.add(agent)
+            await db.flush()
+            created = True
+            return RecoverVerifyResponse(
+                agent_id=agent.id,
+                agent_name=agent.name,
+                api_key=raw_key,
+                created=True,
+            )
+
+    else:
+        # Mode 3: no agent specified → use primary agent
+        result = await db.execute(
+            select(Agent).where(Agent.user_id == user.id, Agent.is_primary == True)
+        )
+        agent = result.scalar_one_or_none()
+        if not agent:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No primary agent found. Specify agent_name or agent_id.",
+            )
+
+    # Regenerate the key — old key becomes invalid immediately
+    raw_key = generate_api_key()
+    agent.api_key_hash = hash_api_key(raw_key)
+
+    return RecoverVerifyResponse(
+        agent_id=agent.id,
+        agent_name=agent.name,
+        api_key=raw_key,
+        created=False,
+    )

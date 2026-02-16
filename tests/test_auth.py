@@ -1,8 +1,8 @@
 """
-Tests for auth endpoints: register, verify, login, get profile.
+Tests for auth endpoints: register, verify, login, recover, agent management.
 """
 import pytest
-from tests.conftest import auth_header, _register_and_verify
+from tests.conftest import auth_header, _register_and_verify, _login_and_verify
 
 
 @pytest.mark.asyncio
@@ -91,13 +91,27 @@ async def test_register_unverified_email_allows_re_register(client):
 
 
 @pytest.mark.asyncio
-async def test_login_returns_jwt(client, registered_agent):
-    """Login with a registered email returns a JWT."""
+async def test_login_sends_code_then_verify_returns_jwt(client, registered_agent):
+    """Login is 2-step: email → code, then code → JWT."""
+    # Step 1: Login sends a verification code
     resp = await client.post("/auth/login", json={"email": "mikey@test.com"})
     assert resp.status_code == 200
     data = resp.json()
-    assert "token" in data
-    assert data["name"] == "Mikey"
+    assert "message" in data
+    assert "code is:" in data["message"]  # Dev mode includes the code
+
+    # Extract the code from dev mode message
+    code = data["message"].split("code is: ")[1].split(".")[0]
+
+    # Step 2: Verify with the code → get JWT
+    verify_resp = await client.post("/auth/login/verify", json={
+        "email": "mikey@test.com",
+        "code": code,
+    })
+    assert verify_resp.status_code == 200
+    verify_data = verify_resp.json()
+    assert "token" in verify_data
+    assert verify_data["name"] == "Mikey"
 
 
 @pytest.mark.asyncio
@@ -138,3 +152,182 @@ async def test_get_me_with_no_prefix_fails(client):
         headers=auth_header("not_even_prefixed"),
     )
     assert resp.status_code == 401
+
+
+# --- Recover flow ---
+
+
+@pytest.mark.asyncio
+async def test_recover_sends_code(client, registered_agent):
+    """POST /auth/recover sends a verification code to a verified email."""
+    resp = await client.post("/auth/recover", json={"email": "mikey@test.com"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "message" in data
+    assert "code is:" in data["message"]  # Dev mode includes the code
+
+
+@pytest.mark.asyncio
+async def test_recover_for_unregistered_email_fails(client):
+    """POST /auth/recover with unknown email returns 404."""
+    resp = await client.post("/auth/recover", json={"email": "nobody@test.com"})
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_recover_verify_regenerates_key(client, registered_agent):
+    """Recover verify regenerates the agent's key — old key dies, new key works."""
+    old_key = registered_agent["api_key"]
+
+    # Request a recover code
+    resp = await client.post("/auth/recover", json={"email": "mikey@test.com"})
+    code = resp.json()["message"].split("code is: ")[1].split(".")[0]
+
+    # Verify with agent_name → regenerate key
+    resp = await client.post("/auth/recover/verify", json={
+        "email": "mikey@test.com",
+        "code": code,
+        "agent_name": "Mikey's Agent",
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["agent_name"] == "Mikey's Agent"
+    assert data["api_key"].startswith("cex_")
+    assert data["created"] is False  # Regenerated, not created
+    new_key = data["api_key"]
+
+    # Old key should be dead
+    resp = await client.get("/auth/me", headers=auth_header(old_key))
+    assert resp.status_code == 401
+
+    # New key should work
+    resp = await client.get("/auth/me", headers=auth_header(new_key))
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "Mikey's Agent"
+
+
+@pytest.mark.asyncio
+async def test_recover_verify_creates_agent_if_not_found(client, registered_agent):
+    """Recover verify with unknown agent_name creates a new agent."""
+    # Request a recover code
+    resp = await client.post("/auth/recover", json={"email": "mikey@test.com"})
+    code = resp.json()["message"].split("code is: ")[1].split(".")[0]
+
+    # Verify with a new agent name → should create it
+    resp = await client.post("/auth/recover/verify", json={
+        "email": "mikey@test.com",
+        "code": code,
+        "agent_name": "Mikey's Claude Code",
+        "framework": "claude",
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["agent_name"] == "Mikey's Claude Code"
+    assert data["created"] is True  # Created, not regenerated
+    assert data["api_key"].startswith("cex_")
+
+    # The new agent should work
+    resp = await client.get("/auth/me", headers=auth_header(data["api_key"]))
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "Mikey's Claude Code"
+
+
+@pytest.mark.asyncio
+async def test_recover_verify_wrong_code_fails(client, registered_agent):
+    """Recover verify with bad code is rejected."""
+    # Request a recover code
+    await client.post("/auth/recover", json={"email": "mikey@test.com"})
+
+    # Verify with wrong code
+    resp = await client.post("/auth/recover/verify", json={
+        "email": "mikey@test.com",
+        "code": "000000",
+        "agent_name": "Mikey's Agent",
+    })
+    assert resp.status_code == 400
+    assert "Invalid verification code" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_recover_verify_primary_agent(client, registered_agent):
+    """Recover verify with no agent_name/id regenerates the primary agent's key."""
+    old_key = registered_agent["api_key"]
+
+    # Request a recover code
+    resp = await client.post("/auth/recover", json={"email": "mikey@test.com"})
+    code = resp.json()["message"].split("code is: ")[1].split(".")[0]
+
+    # Verify with no agent specified → regenerates primary
+    resp = await client.post("/auth/recover/verify", json={
+        "email": "mikey@test.com",
+        "code": code,
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["agent_name"] == "Mikey's Agent"
+    assert data["created"] is False
+    new_key = data["api_key"]
+
+    # Old key dead, new key works
+    assert (await client.get("/auth/me", headers=auth_header(old_key))).status_code == 401
+    assert (await client.get("/auth/me", headers=auth_header(new_key))).status_code == 200
+
+
+# --- JWT auth for agent management ---
+
+
+@pytest.mark.asyncio
+async def test_jwt_can_list_agents(client, registered_agent):
+    """GET /auth/agents accepts JWT auth and returns agent list."""
+    login_data = await _login_and_verify(client, "mikey@test.com")
+    jwt_token = login_data["token"]
+
+    resp = await client.get(
+        "/auth/agents",
+        headers={"Authorization": f"Bearer {jwt_token}"},
+    )
+    assert resp.status_code == 200
+    agents = resp.json()
+    assert len(agents) == 1
+    assert agents[0]["name"] == "Mikey's Agent"
+
+
+@pytest.mark.asyncio
+async def test_jwt_can_add_agent(client, registered_agent):
+    """POST /auth/agents accepts JWT auth and creates a new agent."""
+    login_data = await _login_and_verify(client, "mikey@test.com")
+    jwt_token = login_data["token"]
+
+    resp = await client.post(
+        "/auth/agents",
+        json={"agent_name": "Mikey's GPT", "framework": "gpt"},
+        headers={"Authorization": f"Bearer {jwt_token}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "agent_id" in data
+    assert data["api_key"].startswith("cex_")
+
+    # Verify the new agent exists
+    resp = await client.get(
+        "/auth/agents",
+        headers={"Authorization": f"Bearer {jwt_token}"},
+    )
+    agents = resp.json()
+    assert len(agents) == 2
+    names = {a["name"] for a in agents}
+    assert "Mikey's GPT" in names
+
+
+@pytest.mark.asyncio
+async def test_login_verify_wrong_code_fails(client, registered_agent):
+    """POST /auth/login/verify with bad code is rejected."""
+    # Request login code
+    await client.post("/auth/login", json={"email": "mikey@test.com"})
+
+    # Verify with wrong code
+    resp = await client.post("/auth/login/verify", json={
+        "email": "mikey@test.com",
+        "code": "000000",
+    })
+    assert resp.status_code == 400
