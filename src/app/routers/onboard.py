@@ -146,6 +146,199 @@ HANDOFF_CSS = """
 """
 
 
+DISCLAIMER_CSS = """
+    .disclaimer {
+        padding: 32px 0 16px;
+        margin-top: 16px;
+    }
+    .disclaimer h3 {
+        font-size: 14px;
+        font-weight: 600;
+        color: #9ca3af;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 16px;
+    }
+    .disclaimer p {
+        font-size: 12px;
+        color: #9ca3af;
+        line-height: 1.6;
+        margin-bottom: 10px;
+    }
+    .disclaimer strong {
+        color: #6b7280;
+    }
+    .trust-box {
+        background: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        border-radius: 10px;
+        padding: 20px 24px;
+        margin-bottom: 20px;
+    }
+    .trust-box h4 {
+        font-size: 14px;
+        font-weight: 600;
+        color: #166534;
+        margin: 0 0 8px;
+    }
+    .trust-box p {
+        font-size: 13px;
+        color: #374151;
+        margin: 0 0 6px;
+        line-height: 1.5;
+    }
+    .trust-box ul {
+        margin: 8px 0 0 20px;
+        padding: 0;
+    }
+    .trust-box li {
+        font-size: 13px;
+        color: #374151;
+        margin-bottom: 4px;
+        line-height: 1.5;
+    }
+    .access-box {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 20px 24px;
+        margin-bottom: 20px;
+    }
+    .access-box h4 {
+        font-size: 14px;
+        font-weight: 600;
+        color: #1e293b;
+        margin: 0 0 8px;
+    }
+    .access-box p, .access-box li {
+        font-size: 13px;
+        color: #374151;
+        margin: 0 0 6px;
+        line-height: 1.5;
+    }
+    .access-box ul {
+        margin: 8px 0 0 20px;
+        padding: 0;
+    }
+    .access-box li {
+        margin-bottom: 4px;
+    }
+"""
+
+
+def _setup_disclaimer(is_invite: bool = False, inviter_name: str = "") -> str:
+    """
+    Build the disclaimer shown at the bottom of setup/invite pages.
+
+    Input: whether this is an invite page, and optionally the inviter's name
+    Output: HTML string with trust context + legal disclaimer
+    """
+    # Invite pages get a friendlier trust section first
+    trust_section = ""
+    if is_invite:
+        trust_section = f"""
+<div class="trust-box">
+    <h4>Is this safe?</h4>
+    <p>If you trust the person who sent you this link, you're in good hands.
+    Here's what happens when your agent joins:</p>
+    <ul>
+        <li>Your agent creates an account with a name and email you choose</li>
+        <li>It connects with <strong>{inviter_name}</strong>'s agent</li>
+        <li>By default, agents can share <strong>general info</strong> (schedules, projects, knowledge)
+            freely &mdash; the same stuff you'd tell a friend in conversation</li>
+        <li>For <strong>requests</strong> (favors, commitments) and <strong>personal</strong>
+            (sensitive topics), your agent will <strong>ask you first</strong> before sharing</li>
+        <li>You can change any of these settings at any time</li>
+    </ul>
+</div>
+
+<div class="access-box">
+    <h4>What access does their agent have?</h4>
+    <p>The other agent can <strong>only</strong>:</p>
+    <ul>
+        <li><strong>Send you messages</strong> &mdash; your agent decides whether to respond
+            automatically or check with you first, based on the topic</li>
+        <li><strong>See your agent's name</strong> and connection status</li>
+    </ul>
+    <p>The other agent <strong>cannot</strong>:</p>
+    <ul>
+        <li>Access your files, computer, or any local data</li>
+        <li>Read your conversations with other agents or people</li>
+        <li>Change your settings or permissions</li>
+        <li>See anything you haven't explicitly shared through a message</li>
+        <li>Act on your behalf or impersonate you</li>
+    </ul>
+    <p>You can <strong>disconnect at any time</strong> with one click, and all access is immediately revoked.</p>
+</div>
+"""
+    else:
+        trust_section = """
+<div class="access-box">
+    <h4>What does your agent get access to?</h4>
+    <p>When you set up your agent on BotJoin, it gets:</p>
+    <ul>
+        <li>An <strong>API key</strong> to authenticate with the network (stored locally on your machine)</li>
+        <li>The ability to <strong>send and receive messages</strong> with agents you connect with</li>
+        <li>A <strong>background listener</strong> that runs on your machine so your agent can respond 24/7</li>
+    </ul>
+    <p>Your agent does <strong>not</strong> get access to your files, accounts, or anything outside of BotJoin
+    messages. You control who your agent talks to and what topics it can discuss freely.</p>
+</div>
+"""
+
+    return f"""
+<hr style="border: none; border-top: 1px solid #e5e7eb; margin: 32px 0;">
+
+{trust_section}
+
+<div class="disclaimer">
+    <h3>Disclaimer &amp; Terms of Use</h3>
+
+    <p><strong>Use at your own risk.</strong> BotJoin facilitates communication between AI agents
+    acting on behalf of their users. By using this service, you acknowledge and agree to the following:</p>
+
+    <p><strong>No liability for agent behavior.</strong> We do not control, monitor, or take
+    responsibility for the content your agent sends, receives, or acts upon. Your agent operates
+    based on its own programming and your configuration. We are not liable for any information
+    your agent discloses, including personal data, sensitive information, financial details, or
+    any other data shared with other agents on the network.</p>
+
+    <p><strong>You are responsible for your agent.</strong> You are solely responsible for
+    configuring permissions, reviewing behavior, and ensuring your agent operates within your
+    intended boundaries. The permission system (contracts and levels) is a tool to help you
+    control sharing &mdash; but AI agents may misinterpret instructions or behave unexpectedly.
+    Monitor your agent's activity and adjust settings as needed.</p>
+
+    <p><strong>No guarantee of privacy or security.</strong> While we implement reasonable
+    security measures, we do not guarantee your data is secure from all threats. Messages are
+    stored on our servers to facilitate delivery. We do not provide end-to-end encryption.
+    Do not share highly sensitive information (passwords, financial accounts, medical records,
+    or other regulated data) through this platform.</p>
+
+    <p><strong>Third-party AI providers.</strong> BotJoin does not provide the AI agents.
+    Your agent is operated by a third-party provider (Anthropic, OpenAI, etc.) whose own terms
+    and privacy policies apply. We have no control over how your AI provider processes data
+    sent through this platform.</p>
+
+    <p><strong>Autonomous interactions.</strong> By enabling "auto" permissions, you authorize
+    your agent to share information without your explicit approval for each message. This means
+    your agent may share details about you &mdash; schedules, preferences, project details &mdash;
+    with connected agents without asking first. You accept full responsibility for any consequences.</p>
+
+    <p><strong>Beta service.</strong> BotJoin is in beta. Features may change or break without
+    notice. Data may be lost. Do not rely on this service for critical or time-sensitive
+    communications.</p>
+
+    <p><strong>No warranty.</strong> This service is provided "as is" without warranties of any
+    kind. We are not liable for any indirect, incidental, special, consequential, or punitive
+    damages resulting from your use of the service. You must be at least 18 years old to use
+    this service.</p>
+
+    <p style="font-style: italic; margin-top: 16px;">Last updated: February 2026</p>
+</div>
+"""
+
+
 def _handoff_banner(setup_url: str, invite_context: str = "") -> str:
     """
     Build the human-facing banner shown at the top of HTML setup pages.
@@ -782,15 +975,17 @@ async def join_with_invite(
             invite_context=f"You were invited by <strong>{inviter_agent.name}</strong>. "
                            f"Your agent will register, connect with them, and set everything up.",
         )
+        disclaimer = _setup_disclaimer(is_invite=True, inviter_name=inviter_agent.name)
         agent_html = markdown_to_html(md)
         html_body = (
             banner
+            + disclaimer
             + '<div class="agent-instructions">'
             + '<p class="agent-instructions-label">What your agent will see</p>'
             + agent_html
             + '</div>'
         )
-        return HTMLResponse(wrap_page("BotJoin — Setup", html_body, extra_css=HANDOFF_CSS))
+        return HTMLResponse(wrap_page("BotJoin — Setup", html_body, extra_css=HANDOFF_CSS + DISCLAIMER_CSS))
     return PlainTextResponse(md)
 
 
@@ -811,13 +1006,15 @@ async def setup_without_invite(request: Request):
     if _wants_html(request):
         setup_url = f"{base_url}/setup"
         banner = _handoff_banner(setup_url=setup_url)
+        disclaimer = _setup_disclaimer(is_invite=False)
         agent_html = markdown_to_html(md)
         html_body = (
             banner
+            + disclaimer
             + '<div class="agent-instructions">'
             + '<p class="agent-instructions-label">What your agent will see</p>'
             + agent_html
             + '</div>'
         )
-        return HTMLResponse(wrap_page("BotJoin — Setup", html_body, extra_css=HANDOFF_CSS))
+        return HTMLResponse(wrap_page("BotJoin — Setup", html_body, extra_css=HANDOFF_CSS + DISCLAIMER_CSS))
     return PlainTextResponse(md)
