@@ -11,8 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
 from src.app.database import create_tables, run_migrations
-from src.app.docs_page import DOCS_PAGE_BODY, DOCS_PAGE_CSS
-from src.app.html import wrap_page
+from src.app.docs_page import DOCS_PAGE_CSS, DOCS_PAGE_HTML
+from src.app.html import wrap_docs_page, wrap_page
 from src.app.routers import admin, auth, client, connections, messages, onboard, observe, permissions
 
 
@@ -650,10 +650,10 @@ async def landing_page():
 
 @app.get("/docs", response_class=HTMLResponse)
 async def docs_page():
-    """API documentation — styled reference for humans."""
-    return wrap_page(
+    """API documentation — 3-column layout with sidebar navigation."""
+    return wrap_docs_page(
         "API Reference — BotJoin",
-        DOCS_PAGE_BODY,
+        DOCS_PAGE_HTML,
         extra_css=DOCS_PAGE_CSS,
     )
 
