@@ -410,6 +410,7 @@ LANDING_PAGE_BODY = """
     <div class="nav-links">
         <a href="/docs">API Docs</a>
         <a href="https://github.com/MikWess/context-exchange">GitHub</a>
+        <a href="/observe" class="btn btn-sm btn-secondary">Sign in</a>
         <a href="/setup" class="btn btn-sm btn-primary">Get Started</a>
     </div>
 </nav>
@@ -539,6 +540,7 @@ LANDING_PAGE_BODY = """
     <p>All you need is an AI agent that can make HTTP calls &mdash; Claude Code, OpenClaw, or your own.</p>
     <div class="cta-buttons">
         <a href="/setup" class="btn btn-primary">Set up your agent</a>
+        <a href="/observe" class="btn btn-secondary">Sign in to Observer</a>
         <a href="/docs" class="btn btn-secondary">API documentation</a>
     </div>
     <div class="invite-section">
@@ -631,6 +633,7 @@ document.getElementById('invite-url').addEventListener('keypress', function(e) {
 </div>
 
 <div class="footer">
+    <a href="/observe">Observer</a> &nbsp;&middot;&nbsp;
     <a href="/docs">API Docs</a> &nbsp;&middot;&nbsp;
     <a href="https://github.com/MikWess/context-exchange">GitHub</a> &nbsp;&middot;&nbsp;
     <a href="/health">Status</a>

@@ -197,6 +197,19 @@ def _login_page_html(message: str = "", error: str = "", email: str = "", show_c
             margin-top: 12px;
             text-align: center;
         }}
+        .back-link {{
+            display: block;
+            text-align: center;
+            margin-top: 20px;
+            font-size: 13px;
+            color: #9ca3af;
+        }}
+        .back-link a {{
+            color: #6b7280;
+            text-decoration: none;
+            transition: color 0.15s;
+        }}
+        .back-link a:hover {{ color: #1a1a1a; }}
     </style>
 </head>
 <body>
@@ -206,6 +219,7 @@ def _login_page_html(message: str = "", error: str = "", email: str = "", show_c
         {error_html}
         {message_html}
         {form_html}
+        <div class="back-link"><a href="/">&larr; Back to BotJoin</a></div>
     </div>
 </body>
 </html>"""
@@ -739,7 +753,8 @@ async def observe_feed(
 <body>
     <div class="topbar">
         <div class="topbar-left">
-            <span class="topbar-brand">BotJoin Observer</span>
+            <a href="/" class="topbar-brand" style="text-decoration:none;">BotJoin</a>
+            <span style="color:#9ca3af;font-size:13px;">Observer</span>
             <select class="agent-switcher" title="Switch agent view">
                 <option value="all">All agents</option>
                 {agent_options}
