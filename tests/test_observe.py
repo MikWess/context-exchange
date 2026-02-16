@@ -96,14 +96,17 @@ async def test_observe_login_sends_code(client, registered_agent):
 
 
 @pytest.mark.asyncio
-async def test_observe_login_unknown_email_shows_error(client):
-    """POST /observe/login with unknown email shows error in the form."""
+async def test_observe_login_unknown_email_shows_register(client):
+    """POST /observe/login with unknown email shows the registration form."""
     resp = await client.post(
         "/observe/login",
         data={"email": "nobody@test.com"},
     )
     assert resp.status_code == 200
-    assert "No verified account" in resp.text
+    # Should show the register form instead of just an error
+    assert "No account found" in resp.text
+    assert 'name="name"' in resp.text  # Register form has a name field
+    assert "Create account" in resp.text
 
 
 @pytest.mark.asyncio
@@ -156,3 +159,114 @@ async def test_observe_logout_clears_cookie(client, registered_agent):
     # Cookie should be deleted
     cookie_header = resp.headers.get("set-cookie", "")
     assert "botjoin_jwt" in cookie_header
+
+
+# --- Observer registration flow ---
+
+
+@pytest.mark.asyncio
+async def test_observe_register_page(client):
+    """GET /observe/register shows the registration form."""
+    resp = await client.get("/observe/register")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    assert 'name="name"' in resp.text
+    assert 'name="email"' in resp.text
+    assert "Create account" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_observe_register_flow(client):
+    """Full observer registration: name+email → code → verify → signed in."""
+    # Step 1: Register
+    resp = await client.post(
+        "/observe/register",
+        data={"name": "New Person", "email": "newperson@test.com"},
+    )
+    assert resp.status_code == 200
+    assert 'name="code"' in resp.text  # Should show code form
+    # Dev mode shows the code
+    html = resp.text
+    code_start = html.find("your code is: ") + len("your code is: ")
+    code = html[code_start:code_start + 6]
+
+    # Step 2: Verify — should redirect with a cookie
+    resp = await client.post(
+        "/observe/register/verify",
+        data={"email": "newperson@test.com", "code": code},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/observe"
+    assert "botjoin_jwt" in resp.headers.get("set-cookie", "")
+
+
+@pytest.mark.asyncio
+async def test_observe_register_existing_email_shows_error(client, registered_agent):
+    """POST /observe/register with an already-verified email shows error."""
+    resp = await client.post(
+        "/observe/register",
+        data={"name": "Imposter", "email": "mikey@test.com"},
+    )
+    assert resp.status_code == 200
+    assert "already exists" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_observe_register_wrong_code(client):
+    """POST /observe/register/verify with wrong code shows error."""
+    # Register first
+    await client.post(
+        "/observe/register",
+        data={"name": "Bad Code", "email": "badcode@test.com"},
+    )
+    # Try wrong code
+    resp = await client.post(
+        "/observe/register/verify",
+        data={"email": "badcode@test.com", "code": "000000"},
+    )
+    assert resp.status_code == 200
+    assert "Invalid verification code" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_observe_setup_guide_for_new_user(client):
+    """Observer shows setup guide when user has no agents."""
+    # Register a human through the Observer (no agent)
+    resp = await client.post(
+        "/observe/register",
+        data={"name": "Agent-less Human", "email": "noagent@test.com"},
+    )
+    html = resp.text
+    code_start = html.find("your code is: ") + len("your code is: ")
+    code = html[code_start:code_start + 6]
+
+    # Verify and get the cookie
+    resp = await client.post(
+        "/observe/register/verify",
+        data={"email": "noagent@test.com", "code": code},
+        follow_redirects=False,
+    )
+    # Extract the JWT cookie
+    cookie_header = resp.headers.get("set-cookie", "")
+    jwt_start = cookie_header.find("botjoin_jwt=") + len("botjoin_jwt=")
+    jwt_end = cookie_header.find(";", jwt_start)
+    jwt_token = cookie_header[jwt_start:jwt_end]
+
+    # Visit the dashboard — should show setup guide, not empty conversations
+    client.cookies.set("botjoin_jwt", jwt_token)
+    resp = await client.get("/observe")
+    assert resp.status_code == 200
+    assert "Welcome to BotJoin" in resp.text
+    assert "connect your first AI agent" in resp.text
+    assert "/setup" in resp.text  # Link to full setup instructions
+    assert "/auth/recover" in resp.text  # Shows the recover API call
+
+
+@pytest.mark.asyncio
+async def test_observe_login_has_register_link(client):
+    """Login page has a link to create an account."""
+    resp = await client.get("/observe")
+    assert resp.status_code == 200
+    assert "Create an account" in resp.text
+    assert "/observe/register" in resp.text

@@ -91,6 +91,33 @@ async def test_register_unverified_email_allows_re_register(client):
 
 
 @pytest.mark.asyncio
+async def test_verify_without_agent_name_creates_human_only(client):
+    """Verify with no agent_name creates a verified human but no agent."""
+    # Register
+    resp = await client.post("/auth/register", json={
+        "email": "humanonly@test.com",
+        "name": "Human Only",
+    })
+    code = resp.json()["message"].split("code is: ")[1].split(".")[0]
+
+    # Verify without agent_name
+    resp = await client.post("/auth/verify", json={
+        "email": "humanonly@test.com",
+        "code": code,
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "user_id" in data
+    assert data["agent_id"] is None  # No agent created
+    assert data["api_key"] is None   # No API key
+    assert "add an agent later" in data["message"]
+
+    # The human can still log in and get a JWT
+    resp = await client.post("/auth/login", json={"email": "humanonly@test.com"})
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_login_sends_code_then_verify_returns_jwt(client, registered_agent):
     """Login is 2-step: email → code, then code → JWT."""
     # Step 1: Login sends a verification code

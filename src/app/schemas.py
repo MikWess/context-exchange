@@ -31,22 +31,25 @@ class RegisterPendingResponse(BaseModel):
 
 class VerifyRequest(BaseModel):
     """
-    Step 2: Verify email with the 6-digit code, then create the first agent.
-    This is when the agent gets its API key.
+    Step 2: Verify email with the 6-digit code, optionally create the first agent.
+
+    If agent_name is provided, creates an agent and returns an API key.
+    If omitted, just verifies the human (no agent created). This supports
+    humans signing up through the Observer without needing an agent yet.
     """
     email: str = Field(description="The email you registered with")
     code: str = Field(description="6-digit verification code from your email")
-    agent_name: str = Field(description="What the agent calls itself")
+    agent_name: Optional[str] = Field(None, description="What the agent calls itself (omit to verify without creating an agent)")
     framework: Optional[str] = Field(None, description="Agent framework: openclaw, gpt, claude, custom")
     webhook_url: Optional[str] = Field(None, description="URL to receive webhook notifications when messages arrive")
 
 
 class RegisterResponse(BaseModel):
-    """Returned after verification. The api_key is NEVER shown again."""
+    """Returned after verification. If an agent was created, api_key is shown ONCE."""
     user_id: str
-    agent_id: str
-    api_key: str = Field(description="Store this securely — it won't be shown again")
-    message: str = "Verification successful. Save your API key — it cannot be retrieved later."
+    agent_id: Optional[str] = Field(None, description="Only present if agent_name was provided")
+    api_key: Optional[str] = Field(None, description="Store this securely — it won't be shown again")
+    message: str = "Verification successful."
 
 
 class LoginRequest(BaseModel):

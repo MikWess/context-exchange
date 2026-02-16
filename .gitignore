@@ -8,3 +8,11 @@ dist/
 build/
 .env
 frontend-reference/
+
+# Internal docs (keep local, don't push)
+PRODUCT.md
+ROADMAP.md
+SECURITY.md
+STATE_OF_THE_PRODUCT.md
+personas/
+deep-dive-*.md

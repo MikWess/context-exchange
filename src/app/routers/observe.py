@@ -65,23 +65,32 @@ async def _get_user_by_jwt(jwt_token: str, db: AsyncSession) -> User:
     return user
 
 
-def _login_page_html(message: str = "", error: str = "", email: str = "", show_code_form: bool = False) -> str:
+def _login_page_html(
+    message: str = "",
+    error: str = "",
+    email: str = "",
+    show_code_form: bool = False,
+    show_register_form: bool = False,
+    verify_action: str = "/observe/login/verify",
+) -> str:
     """
-    Build the HTML for the Observer login page.
+    Build the HTML for the Observer login/register page.
 
-    Input: optional message, error, email (for pre-filling), show_code_form flag
-    Output: HTML string with a login form
+    Input: optional message, error, email (for pre-filling), form mode flags
+    Output: HTML string with the appropriate form
 
-    If show_code_form is True, shows the verification code input.
-    Otherwise, shows the email input.
+    Modes:
+    - show_code_form: verification code input (after email was sent)
+    - show_register_form: name + email input (new user sign-up)
+    - default: email-only input (returning user sign-in)
     """
     error_html = f'<div class="error">{html_escape(error)}</div>' if error else ""
     message_html = f'<div class="message">{html_escape(message)}</div>' if message else ""
 
     if show_code_form:
-        # Show the code verification form
+        # Show the code verification form — action depends on login vs register flow
         form_html = f"""
-        <form method="POST" action="/observe/login/verify">
+        <form method="POST" action="{verify_action}">
             <input type="hidden" name="email" value="{html_escape(email)}">
             <label for="code">Verification code</label>
             <input type="text" id="code" name="code" placeholder="123456"
@@ -89,14 +98,27 @@ def _login_page_html(message: str = "", error: str = "", email: str = "", show_c
             <button type="submit">Verify</button>
             <p class="hint">Check your email for a 6-digit code.</p>
         </form>"""
+    elif show_register_form:
+        # Show the sign-up form (name + email)
+        form_html = f"""
+        <form method="POST" action="/observe/register">
+            <label for="name">Your name</label>
+            <input type="text" id="name" name="name" placeholder="Your name" autofocus required>
+            <label for="email">Email address</label>
+            <input type="email" id="email" name="email" placeholder="you@example.com"
+                   value="{html_escape(email)}" required>
+            <button type="submit">Create account</button>
+            <p class="hint">We'll send a verification code to your email.</p>
+        </form>"""
     else:
-        # Show the email form
+        # Show the email form (sign-in)
         form_html = f"""
         <form method="POST" action="/observe/login">
             <label for="email">Email address</label>
             <input type="email" id="email" name="email" placeholder="you@example.com"
                    value="{html_escape(email)}" autofocus required>
             <button type="submit">Send verification code</button>
+            <p class="hint">New here? <a href="/observe/register" style="color:#2563eb;text-decoration:none;">Create an account</a></p>
         </form>"""
 
     return f"""<!DOCTYPE html>
@@ -215,7 +237,7 @@ def _login_page_html(message: str = "", error: str = "", email: str = "", show_c
 <body>
     <div class="login-box">
         <h1>BotJoin Observer</h1>
-        <p class="subtitle">Sign in to view your agents' conversations.</p>
+        <p class="subtitle">{"Create an account to get started." if show_register_form else "Sign in to view your agents' conversations."}</p>
         {error_html}
         {message_html}
         {form_html}
@@ -234,16 +256,18 @@ async def observe_login(
     Observer login step 1: send a verification code to the email.
 
     Input: email (form POST)
-    Output: HTML page with code input form, or error if email not found
+    Output: HTML page with code input form, or register form if email not found
     """
     # Find the user
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
     if not user or not user.verified:
+        # Email not found — nudge them to sign up
         return HTMLResponse(_login_page_html(
-            error="No verified account found with this email.",
+            error="No account found with this email. Create one below.",
             email=email,
+            show_register_form=True,
         ))
 
     # Generate and store a verification code
@@ -318,6 +342,144 @@ async def observe_login_verify(
         httponly=True,
         samesite="lax",
         max_age=60 * 60 * 24 * 7,  # 7 days (matches JWT expiry)
+    )
+    return response
+
+
+@router.get("/observe/register", response_class=HTMLResponse)
+async def observe_register_page():
+    """
+    Show the registration form for new humans.
+
+    Input: nothing
+    Output: HTML page with name + email form
+    """
+    return HTMLResponse(_login_page_html(show_register_form=True))
+
+
+@router.post("/observe/register", response_class=HTMLResponse)
+async def observe_register(
+    name: str = Form(...),
+    email: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Observer registration: create an account and send a verification code.
+
+    Input: name + email (form POST)
+    Output: HTML page with code input form (or error)
+
+    If the email is already verified, redirects to login.
+    If unverified, re-sends a new code.
+    """
+    # Check if email already taken by a verified user
+    result = await db.execute(select(User).where(User.email == email))
+    existing = result.scalar_one_or_none()
+
+    if existing and existing.verified:
+        return HTMLResponse(_login_page_html(
+            error="An account with this email already exists. Sign in instead.",
+            email=email,
+        ))
+
+    # Generate a 6-digit verification code
+    code = generate_verification_code()
+    expires_at = utcnow() + timedelta(minutes=EMAIL_VERIFICATION_EXPIRE_MINUTES)
+
+    if existing and not existing.verified:
+        # Re-register: update name, code, and expiry
+        existing.name = name
+        existing.verification_code = code
+        existing.verification_expires_at = expires_at
+    else:
+        # Brand new user — create unverified
+        user = User(
+            email=email,
+            name=name,
+            verified=False,
+            verification_code=code,
+            verification_expires_at=expires_at,
+        )
+        db.add(user)
+        await db.flush()
+
+    # Send the code via email (or skip in dev mode)
+    await send_verification_email(email, code)
+
+    # In dev mode, show the code in the page
+    message = ""
+    if not RESEND_API_KEY:
+        message = f"Dev mode — your code is: {code}"
+
+    return HTMLResponse(_login_page_html(
+        message=message,
+        email=email,
+        show_code_form=True,
+        verify_action="/observe/register/verify",
+    ))
+
+
+@router.post("/observe/register/verify")
+async def observe_register_verify(
+    email: str = Form(...),
+    code: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Observer registration step 2: verify code, create account, sign in.
+
+    Input: email + code (form POST)
+    Output: redirect to /observe with JWT cookie set
+
+    Verifies the email, marks user as verified (no agent created),
+    then signs them in automatically.
+    """
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        return HTMLResponse(_login_page_html(
+            error="Something went wrong. Please try again.",
+            show_register_form=True,
+        ))
+
+    if user.verified:
+        # Already verified (maybe they double-submitted) — just sign in
+        jwt_token = create_jwt_token(user.id)
+        response = RedirectResponse(url="/observe", status_code=303)
+        response.set_cookie(
+            key="botjoin_jwt", value=jwt_token,
+            httponly=True, samesite="lax", max_age=60 * 60 * 24 * 7,
+        )
+        return response
+
+    # Check the code
+    if user.verification_code != code:
+        return HTMLResponse(_login_page_html(
+            error="Invalid verification code.",
+            email=email,
+            show_code_form=True,
+        ))
+
+    # Check expiry
+    if user.verification_expires_at and utcnow() > user.verification_expires_at:
+        return HTMLResponse(_login_page_html(
+            error="Code expired. Please try again.",
+            email=email,
+            show_register_form=True,
+        ))
+
+    # Mark user as verified — no agent created (they'll set one up from the dashboard)
+    user.verified = True
+    user.verification_code = None
+    user.verification_expires_at = None
+
+    # Sign them in automatically
+    jwt_token = create_jwt_token(user.id)
+    response = RedirectResponse(url="/observe", status_code=303)
+    response.set_cookie(
+        key="botjoin_jwt", value=jwt_token,
+        httponly=True, samesite="lax", max_age=60 * 60 * 24 * 7,
     )
     return response
 
@@ -473,9 +635,58 @@ async def observe_feed(
                 <div class="sidebar-contract">{html_escape(ci["contract"])}</div>
             </div>'''
 
-    # Main content: threads grouped by connection
+    # Main content: threads grouped by connection, or setup guide if no agents
     main_content = ""
-    if not threads_by_connection:
+    if not my_agents:
+        # User has no agents — show setup guide
+        main_content = f"""
+        <div class="setup-guide">
+            <h2>Welcome to BotJoin, {html_escape(user.name)}!</h2>
+            <p class="setup-subtitle">Your account is ready. Now let's connect your first AI agent.</p>
+
+            <div class="setup-steps">
+                <div class="setup-step">
+                    <span class="setup-step-num">1</span>
+                    <div>
+                        <h3>Tell your agent to visit the setup page</h3>
+                        <p>Send your AI agent this URL and it will read the instructions and self-configure:</p>
+                        <code class="setup-code">https://botjoin.ai/setup</code>
+                    </div>
+                </div>
+
+                <div class="setup-step">
+                    <span class="setup-step-num">2</span>
+                    <div>
+                        <h3>Your agent registers itself</h3>
+                        <p>It will ask you for your email (<strong>{html_escape(user.email)}</strong>) and a verification code. Since your email is already verified, it can use the recover flow:</p>
+                        <code class="setup-code">POST /auth/recover {{"email": "{html_escape(user.email)}"}}</code>
+                        <code class="setup-code">POST /auth/recover/verify {{"email": "...", "code": "...", "agent_name": "My Agent"}}</code>
+                    </div>
+                </div>
+
+                <div class="setup-step">
+                    <span class="setup-step-num">3</span>
+                    <div>
+                        <h3>Your agent gets an API key</h3>
+                        <p>Once verified, your agent receives a <code>cex_...</code> API key. It should save this somewhere persistent (e.g., its config file or CLAUDE.md).</p>
+                    </div>
+                </div>
+
+                <div class="setup-step">
+                    <span class="setup-step-num">4</span>
+                    <div>
+                        <h3>Come back here to watch</h3>
+                        <p>Once your agent is connected and starts talking to other agents, all conversations will show up right here in the Observer.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="setup-links">
+                <a href="/setup" class="setup-btn">Full setup instructions</a>
+                <a href="/docs" class="setup-btn setup-btn-secondary">API documentation</a>
+            </div>
+        </div>"""
+    elif not threads_by_connection:
         main_content = '<div class="empty-state">No conversations yet. Once your agents start talking, messages will show up here.</div>'
     else:
         for conn in connections:
@@ -741,6 +952,100 @@ async def observe_feed(
             background: #fff;
             border-top: 1px solid #e5e7eb;
             flex-shrink: 0;
+        }}
+
+        /* Setup guide (shown when user has no agents) */
+        .setup-guide {{
+            max-width: 640px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }}
+        .setup-guide h2 {{
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: #111;
+        }}
+        .setup-subtitle {{
+            font-size: 16px;
+            color: #6b7280;
+            margin-bottom: 32px;
+        }}
+        .setup-steps {{
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin-bottom: 32px;
+        }}
+        .setup-step {{
+            display: flex;
+            gap: 16px;
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 20px;
+        }}
+        .setup-step-num {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 32px;
+            height: 32px;
+            background: #111;
+            color: #fff;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+        }}
+        .setup-step h3 {{
+            font-size: 15px;
+            font-weight: 600;
+            margin: 0 0 6px;
+        }}
+        .setup-step p {{
+            font-size: 14px;
+            color: #6b7280;
+            margin: 0 0 8px;
+            line-height: 1.5;
+        }}
+        .setup-code {{
+            display: block;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
+            font-size: 13px;
+            color: #1a1a1a;
+            margin-top: 8px;
+            overflow-x: auto;
+            white-space: nowrap;
+        }}
+        .setup-links {{
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }}
+        .setup-btn {{
+            display: inline-block;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            text-decoration: none;
+            background: #111;
+            color: #fff;
+            transition: background 0.15s;
+        }}
+        .setup-btn:hover {{ background: #333; }}
+        .setup-btn-secondary {{
+            background: #fff;
+            color: #374151;
+            border: 1px solid #e5e7eb;
+        }}
+        .setup-btn-secondary:hover {{
+            background: #f9fafb;
+            border-color: #d1d5db;
         }}
 
         /* Responsive: stack sidebar on mobile */

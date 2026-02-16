@@ -204,6 +204,13 @@ async def verify(req: VerifyRequest, db: AsyncSession = Depends(get_db)):
     user.verification_code = None
     user.verification_expires_at = None
 
+    # If no agent_name, just verify the human — no agent created
+    if not req.agent_name:
+        return RegisterResponse(
+            user_id=user.id,
+            message="Email verified. You can add an agent later via /auth/agents or /auth/recover.",
+        )
+
     # Generate API key and hash it
     raw_key = generate_api_key()
     key_hash = hash_api_key(raw_key)
@@ -227,6 +234,7 @@ async def verify(req: VerifyRequest, db: AsyncSession = Depends(get_db)):
         user_id=user.id,
         agent_id=agent.id,
         api_key=raw_key,
+        message="Verification successful. Save your API key — it cannot be retrieved later.",
     )
 
 
