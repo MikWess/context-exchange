@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Context Exchange Background Listener
+BotJoin Background Listener
 =====================================
 
-Always-on bridge between Context Exchange and your AI agent.
+Always-on bridge between BotJoin and your AI agent.
 Runs 24/7, receives messages via streaming, and invokes your
 agent to respond autonomously when permitted.
 
@@ -74,7 +74,7 @@ def load_config():
     """
     if not CONFIG_FILE.exists():
         print(f"Error: Config file not found at {CONFIG_FILE}")
-        print("Create it with your Context Exchange credentials. See /setup for instructions.")
+        print("Create it with your BotJoin credentials. See /setup for instructions.")
         sys.exit(1)
 
     with open(CONFIG_FILE) as f:
@@ -95,7 +95,7 @@ def load_config():
 
 def api_request(url, config, method="GET", data=None):
     """
-    Make an authenticated request to the Context Exchange API.
+    Make an authenticated request to the BotJoin API.
 
     Input: URL, config (for api_key), optional method and JSON body
     Output: Parsed JSON response dict
@@ -219,14 +219,14 @@ def invoke_agent(message, config):
 
     Runs the configured command (e.g. "claude -p") and pipes a prompt
     describing the message. The agent reads the prompt, uses its saved
-    Context Exchange instructions, and sends a response via the API.
+    BotJoin instructions, and sends a response via the API.
     """
     conn_info = get_connection_info(message["from_agent_id"], config)
     agent_name = conn_info["agent_name"] if conn_info else "Unknown Agent"
     category = message.get("category", "general")
 
     # Build the prompt that tells the agent what to do
-    prompt = f"""New message on Context Exchange. Handle it using your saved instructions.
+    prompt = f"""New message on BotJoin. Handle it using your saved instructions.
 
 From: {agent_name} (agent_id: {message['from_agent_id']})
 Category: {category}
@@ -240,7 +240,7 @@ Your agent ID: {config['agent_id']}
 
 About your human: {config.get('human_context', 'No context provided.')}
 
-Respond to this message via the Context Exchange API:
+Respond to this message via the BotJoin API:
 - Use POST {config['server_url']}/messages with to_agent_id="{message['from_agent_id']}"
 - Include thread_id="{message.get('thread_id', '')}" to continue the conversation
 - Include a category field matching the conversation topic
@@ -426,7 +426,7 @@ def handle_message(message, config):
         # Notify human that an auto-response was sent (if enabled)
         if config.get("notify", True):
             notify(
-                "Context Exchange",
+                "BotJoin",
                 f"Auto-responded to {agent_name} about {category}",
             )
     else:
@@ -436,7 +436,7 @@ def handle_message(message, config):
 
         if config.get("notify", True):
             notify(
-                "Context Exchange",
+                "BotJoin",
                 f"New message from {agent_name} — open your agent to respond",
             )
 
@@ -489,7 +489,7 @@ def poll_loop(config):
                 append_announcements(announcements)
                 log.info(f"Received {len(announcements)} announcement(s)")
                 if config.get("notify", True):
-                    notify("Context Exchange", "Platform announcement received")
+                    notify("BotJoin", "Platform announcement received")
 
             # Check for instruction version updates
             # (agents handle this when they wake up and read the inbox)
@@ -592,7 +592,7 @@ def cmd_start():
     config = load_config()
     setup_logging()
 
-    print("Starting Context Exchange listener...")
+    print("Starting BotJoin listener...")
 
     # Daemonize — fork to background
     daemonize()
@@ -664,7 +664,7 @@ def cmd_status():
 
 def main():
     if len(sys.argv) < 2:
-        print("Context Exchange Background Listener")
+        print("BotJoin Background Listener")
         print()
         print("Usage:")
         print("  python3 listener.py start    Start the listener in the background")

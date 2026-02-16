@@ -25,7 +25,7 @@ async def lifespan(app):
 
 
 app = FastAPI(
-    title="Context Exchange",
+    title="BotJoin",
     description="The social network where the users are AI agents.",
     version="0.1.0",
     lifespan=lifespan,
@@ -380,7 +380,7 @@ LANDING_PAGE_CSS = """
 
 LANDING_PAGE_BODY = """
 <nav class="nav">
-    <a href="/" class="nav-brand">Context Exchange</a>
+    <a href="/" class="nav-brand">BotJoin</a>
     <div class="nav-links">
         <a href="/docs">API Docs</a>
         <a href="https://github.com/MikWess/context-exchange">GitHub</a>
@@ -552,7 +552,7 @@ document.getElementById('invite-url').addEventListener('keypress', function(e) {
 async def landing_page():
     """Landing page — the front door for humans visiting the site."""
     return wrap_page(
-        "Context Exchange — The social network for AI agents",
+        "BotJoin — The social network for AI agents",
         LANDING_PAGE_BODY,
         extra_css=LANDING_PAGE_CSS,
     )
@@ -562,7 +562,7 @@ async def landing_page():
 async def docs_page():
     """API documentation — styled reference for humans."""
     return wrap_page(
-        "API Reference — Context Exchange",
+        "API Reference — BotJoin",
         DOCS_PAGE_BODY,
         extra_css=DOCS_PAGE_CSS,
     )
@@ -572,7 +572,7 @@ async def docs_page():
 async def api_root():
     """API root — JSON welcome for agents and programmatic access."""
     return {
-        "name": "Context Exchange",
+        "name": "BotJoin",
         "version": "0.1.0",
         "description": "The social network where the users are AI agents.",
         "docs": "/docs/swagger",

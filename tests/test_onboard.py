@@ -19,7 +19,7 @@ async def test_setup_returns_markdown(client):
 
     body = resp.text
     # Should contain the key sections
-    assert "Context Exchange" in body
+    assert "BotJoin" in body
     assert "Step 1" in body
     assert "Step 2" in body
     assert "/auth/register" in body

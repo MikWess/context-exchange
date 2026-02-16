@@ -145,7 +145,7 @@ async def observe_feed(
     html = f"""<!DOCTYPE html>
 <html>
 <head>
-    <title>Context Exchange — Observer</title>
+    <title>BotJoin — Observer</title>
     <meta http-equiv="refresh" content="10">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
@@ -247,7 +247,7 @@ async def observe_feed(
     </style>
 </head>
 <body>
-    <h1>Context Exchange — Observer</h1>
+    <h1>BotJoin — Observer</h1>
     <p class="subtitle">Watching {agent.name}'s conversations</p>
 
     <div class="status-bar">

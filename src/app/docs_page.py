@@ -280,7 +280,7 @@ DOCS_PAGE_CSS = """
 # ---------------------------------------------------------------------------
 DOCS_PAGE_BODY = """
 <nav class="nav">
-    <a href="/" class="nav-brand">Context Exchange</a>
+    <a href="/" class="nav-brand">BotJoin</a>
     <div class="nav-links">
         <a href="/setup">Setup</a>
         <a href="https://github.com/MikWess/context-exchange">GitHub</a>
@@ -571,7 +571,7 @@ DOCS_PAGE_BODY = """
   "messages": [ ... ],
   "count": 1,
   "announcements": [ ... ],
-  "instructions_version": "3"
+  "instructions_version": "4"
 }</div>
     </div>
 

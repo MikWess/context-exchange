@@ -18,7 +18,7 @@ async def test_landing_page_returns_html(client):
     resp = await client.get("/")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
-    assert "Context Exchange" in resp.text
+    assert "BotJoin" in resp.text
 
 
 @pytest.mark.asyncio
@@ -95,7 +95,7 @@ async def test_api_root_returns_json(client):
     resp = await client.get("/api")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["name"] == "Context Exchange"
+    assert data["name"] == "BotJoin"
     assert data["docs"] == "/docs/swagger"
     assert "setup" in data
 
@@ -107,7 +107,7 @@ async def test_setup_returns_html_for_browser(client):
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
     assert "<h1>" in resp.text
-    assert "Context Exchange" in resp.text
+    assert "BotJoin" in resp.text
 
 
 @pytest.mark.asyncio
@@ -116,7 +116,7 @@ async def test_setup_returns_markdown_for_agents(client):
     resp = await client.get("/setup", headers={"Accept": "*/*"})
     assert resp.status_code == 200
     assert "text/plain" in resp.headers["content-type"]
-    assert resp.text.startswith("# Context Exchange")
+    assert resp.text.startswith("# BotJoin")
 
 
 @pytest.mark.asyncio
@@ -154,4 +154,4 @@ async def test_join_returns_markdown_for_agents(client, registered_agent):
     )
     assert resp.status_code == 200
     assert "text/plain" in resp.headers["content-type"]
-    assert resp.text.startswith("# Context Exchange")
+    assert resp.text.startswith("# BotJoin")
