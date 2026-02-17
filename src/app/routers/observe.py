@@ -635,10 +635,14 @@ async def observe_feed(
         sidebar_items = '<div class="sidebar-empty">No connections yet</div>'
     else:
         for ci in connection_infos:
+            initial = html_escape(ci["name"][0].upper()) if ci["name"] else "?"
             sidebar_items += f'''
             <div class="sidebar-item" data-conn-id="{html_escape(ci["id"])}">
-                <div class="sidebar-name">{html_escape(ci["name"])}</div>
-                <div class="sidebar-contract">{html_escape(ci["contract"])}</div>
+                <div class="avatar">{initial}</div>
+                <div class="sidebar-info">
+                    <div class="sidebar-name">{html_escape(ci["name"])}</div>
+                    <div class="sidebar-status">connected</div>
+                </div>
             </div>'''
 
     # Main content: threads grouped by connection, or setup guide if no agents
@@ -709,7 +713,7 @@ async def observe_feed(
             </div>
         </div>"""
     elif not threads_by_connection:
-        main_content = '<div class="empty-state">No conversations yet. Once your agents start talking, messages will show up here.</div>'
+        main_content = '<div class="empty-state"><h3 style="margin-bottom:8px;color:#374151;">No conversations yet</h3><p style="color:#9ca3af;">When your agents start chatting, their conversations will appear here.</p></div>'
     else:
         for conn in connections:
             conn_threads = threads_by_connection.get(conn.id, [])
@@ -720,8 +724,9 @@ async def observe_feed(
             other_user = users_map.get(other_user_id)
             other_name = html_escape(other_user.name if other_user else "Unknown")
 
+            other_initial = other_name[0].upper() if other_name else "?"
             main_content += f'<div class="connection-group" data-conn-id="{html_escape(conn.id)}">'
-            main_content += f'<div class="connection-header">{other_name} <span class="contract-badge">{html_escape(conn.contract_type or "friends")}</span></div>'
+            main_content += f'<div class="connection-header"><span class="conn-avatar">{other_initial}</span> {other_name} <span class="contract-badge">{html_escape(conn.contract_type or "friends")}</span></div>'
 
             for thread, messages in conn_threads:
                 subject = html_escape(thread.subject or "Untitled thread")
@@ -743,8 +748,8 @@ async def observe_feed(
                     main_content += f'''
                     <div class="msg {bubble_class}">
                         <div class="msg-header">
-                            <span class="msg-sender">{sender_name} → {receiver_name}</span>
-                            <span class="msg-time">{time_str} {status_icon}</span>
+                            <span class="msg-sender">{sender_name}</span>
+                            <span class="msg-time">to {receiver_name} · {time_str} {status_icon}</span>
                         </div>
                         <div class="msg-content">{content}</div>
                         <div class="msg-meta">{html_escape(msg.message_type)}{(' · ' + category) if category else ''}</div>
@@ -847,7 +852,10 @@ async def observe_feed(
             color: #9ca3af;
         }}
         .sidebar-item {{
-            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
             cursor: pointer;
             border-left: 3px solid transparent;
             transition: background 0.15s;
@@ -864,9 +872,9 @@ async def observe_feed(
             font-weight: 500;
             color: #1a1a1a;
         }}
-        .sidebar-contract {{
+        .sidebar-status {{
             font-size: 11px;
-            color: #9ca3af;
+            color: #22c55e;
             margin-top: 2px;
         }}
         .sidebar-empty {{
@@ -874,6 +882,36 @@ async def observe_feed(
             color: #9ca3af;
             font-size: 13px;
             text-align: center;
+        }}
+        .avatar {{
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 14px;
+            flex-shrink: 0;
+        }}
+        .sidebar-info {{
+            flex: 1;
+            min-width: 0;
+        }}
+        .conn-avatar {{
+            display: inline-flex;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            color: #fff;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 12px;
+            flex-shrink: 0;
         }}
 
         /* Main content area */
@@ -892,10 +930,13 @@ async def observe_feed(
             margin-bottom: 24px;
         }}
         .connection-header {{
+            display: flex;
+            align-items: center;
+            gap: 10px;
             font-size: 16px;
             font-weight: 600;
-            margin-bottom: 12px;
-            padding-bottom: 8px;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
             border-bottom: 1px solid #e5e7eb;
             color: #1a1a1a;
         }}
@@ -924,20 +965,23 @@ async def observe_feed(
             border-bottom: 1px solid #f0f0f0;
         }}
 
-        /* Messages */
+        /* Messages — chat-style bubbles */
         .msg {{
-            padding: 10px 14px;
-            margin-bottom: 8px;
-            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 10px;
+            border-radius: 18px;
             font-size: 14px;
+            max-width: 80%;
         }}
         .msg-mine {{
-            background: #f0fdf4;
-            border-left: 3px solid #22c55e;
+            background: #dcfce7;
+            margin-left: auto;
+            border-bottom-right-radius: 4px;
         }}
         .msg-theirs {{
             background: #eff6ff;
-            border-left: 3px solid #2563eb;
+            margin-right: auto;
+            border-bottom-left-radius: 4px;
         }}
         .msg-header {{
             display: flex;
@@ -1136,7 +1180,7 @@ async def observe_feed(
 
     <div class="layout">
         <div class="sidebar">
-            <div class="sidebar-header">Connections</div>
+            <div class="sidebar-header">Friends</div>
             {sidebar_items}
         </div>
 
@@ -1145,7 +1189,7 @@ async def observe_feed(
         </div>
     </div>
 
-    <div class="legend">○ sent · ◑ delivered · ● read — auto-refreshes every 10s</div>
+    <div class="legend">○ sent · ◑ delivered · ● read</div>
 
     <script>
     function switchTab(event, tabId) {{
