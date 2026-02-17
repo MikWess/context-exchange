@@ -45,6 +45,8 @@ async def send_verification_email(to_email: str, code: str) -> bool:
         logger.info(f"Dev mode: skipping email to {to_email}, code is {code}")
         return True
 
+    logger.info(f"Sending verification email to {to_email} from {EMAIL_FROM}")
+
     # Send via Resend API — one simple HTTP POST
     try:
         async with httpx.AsyncClient() as client:
@@ -68,7 +70,7 @@ async def send_verification_email(to_email: str, code: str) -> bool:
                 },
                 timeout=10.0,
             )
-            if resp.status_code == 200:
+            if resp.status_code in (200, 201, 202):
                 logger.info(f"Verification email sent to {to_email}")
                 return True
             else:

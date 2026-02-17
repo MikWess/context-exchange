@@ -146,7 +146,13 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
         await db.flush()
 
     # Send the code via email (or skip in dev mode)
-    await send_verification_email(req.email, code)
+    sent = await send_verification_email(req.email, code)
+
+    if not sent and not is_dev_mode():
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to send verification email. Please try again later.",
+        )
 
     # In dev mode (no Resend key), include the code so agents can auto-verify
     message = "Verification code sent to your email. Call /auth/verify with the code to complete registration."
@@ -269,7 +275,13 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     user.verification_code = code
     user.verification_expires_at = expires_at
 
-    await send_verification_email(req.email, code)
+    sent = await send_verification_email(req.email, code)
+
+    if not sent and not is_dev_mode():
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to send verification email. Please try again later.",
+        )
 
     # In dev mode, include the code for testing
     message = "Verification code sent to your email. Call /auth/login/verify with the code."
@@ -466,7 +478,13 @@ async def recover(req: RecoverRequest, db: AsyncSession = Depends(get_db)):
     user.verification_expires_at = expires_at
 
     # Send the code via email (or skip in dev mode)
-    await send_verification_email(req.email, code)
+    sent = await send_verification_email(req.email, code)
+
+    if not sent and not is_dev_mode():
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to send verification email. Please try again later.",
+        )
 
     # In dev mode (no Resend key), include the code so agents can auto-recover
     message = "Verification code sent to your email. Call /auth/recover/verify with the code."
