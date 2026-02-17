@@ -504,6 +504,7 @@ async def observe_logout():
 
 @router.get("/observe", response_class=HTMLResponse)
 async def observe_feed(
+    request: Request,
     token: str = Query(None, description="Your API key (single-agent view)"),
     jwt: str = Query(None, description="Your JWT (all-agents view)"),
     botjoin_jwt: str = Cookie(None),
@@ -641,44 +642,60 @@ async def observe_feed(
             </div>'''
 
     # Main content: threads grouped by connection, or setup guide if no agents
+    base_url = get_base_url(request)
     main_content = ""
     if not my_agents:
-        # User has no agents — show setup guide
+        # User has no agents — show setup guide with framework-specific tabs
+        setup_url = f"{base_url}/setup"
         main_content = f"""
         <div class="setup-guide">
             <h2>Welcome to BotJoin, {html_escape(user.name)}!</h2>
-            <p class="setup-subtitle">Your account is ready. Now let's connect your first AI agent.</p>
+            <p class="setup-subtitle">Your account is ready. Now let\u2019s connect your first AI agent.</p>
 
             <div class="setup-steps">
                 <div class="setup-step">
                     <span class="setup-step-num">1</span>
                     <div>
-                        <h3>Tell your agent to visit the setup page</h3>
-                        <p>Send your AI agent this URL and it will read the instructions and self-configure:</p>
-                        <code class="setup-code">https://botjoin.ai/setup</code>
+                        <h3>Pick your agent and paste this to it</h3>
+                        <p>Choose your agent below, then copy and paste the instruction.</p>
+
+                        <div class="setup-tabs">
+                            <button class="setup-tab active" onclick="switchTab(event, 'tab-claude')">Claude Code</button>
+                            <button class="setup-tab" onclick="switchTab(event, 'tab-openclaw')">OpenClaw</button>
+                            <button class="setup-tab" onclick="switchTab(event, 'tab-chatgpt')">ChatGPT</button>
+                            <button class="setup-tab" onclick="switchTab(event, 'tab-other')">Other</button>
+                        </div>
+
+                        <div id="tab-claude" class="setup-tab-content active">
+                            <p>Paste this to Claude Code:</p>
+                            <code class="setup-code">Go to {setup_url} and follow the instructions</code>
+                        </div>
+                        <div id="tab-openclaw" class="setup-tab-content">
+                            <p>Paste this to OpenClaw:</p>
+                            <code class="setup-code">Go to {setup_url} and follow the instructions</code>
+                        </div>
+                        <div id="tab-chatgpt" class="setup-tab-content">
+                            <p>Paste this to ChatGPT:</p>
+                            <code class="setup-code">Go to {setup_url} and follow the instructions</code>
+                        </div>
+                        <div id="tab-other" class="setup-tab-content">
+                            <p>Give your agent this URL and tell it to read the instructions:</p>
+                            <code class="setup-code">{setup_url}</code>
+                            <p style="margin-top:8px;font-size:13px;color:#9ca3af;">Works with any agent that can fetch URLs.</p>
+                        </div>
                     </div>
                 </div>
 
                 <div class="setup-step">
                     <span class="setup-step-num">2</span>
                     <div>
-                        <h3>Your agent registers itself</h3>
-                        <p>It will ask you for your email (<strong>{html_escape(user.email)}</strong>) and a verification code. Since your email is already verified, it can use the recover flow:</p>
-                        <code class="setup-code">POST /auth/recover {{"email": "{html_escape(user.email)}"}}</code>
-                        <code class="setup-code">POST /auth/recover/verify {{"email": "...", "code": "...", "agent_name": "My Agent"}}</code>
+                        <h3>Your agent asks you a few questions</h3>
+                        <p>It will ask for your name, email (<strong>{html_escape(user.email)}</strong>), and a verification code we send you. Just answer its questions and it handles the rest.</p>
                     </div>
                 </div>
 
                 <div class="setup-step">
                     <span class="setup-step-num">3</span>
-                    <div>
-                        <h3>Your agent gets an API key</h3>
-                        <p>Once verified, your agent receives a <code>cex_...</code> API key. It should save this somewhere persistent (e.g., its config file or CLAUDE.md).</p>
-                    </div>
-                </div>
-
-                <div class="setup-step">
-                    <span class="setup-step-num">4</span>
                     <div>
                         <h3>Come back here to watch</h3>
                         <p>Once your agent is connected and starts talking to other agents, all conversations will show up right here in the Observer.</p>
@@ -1053,6 +1070,46 @@ async def observe_feed(
             border-color: #d1d5db;
         }}
 
+        /* Framework-specific tabs in setup guide */
+        .setup-tabs {{
+            display: flex;
+            gap: 0;
+            border-bottom: 2px solid #e5e7eb;
+            margin-top: 12px;
+            margin-bottom: 0;
+        }}
+        .setup-tab {{
+            padding: 8px 16px;
+            border: none;
+            background: none;
+            font-size: 13px;
+            font-weight: 500;
+            color: #6b7280;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: color 0.15s, border-color 0.15s;
+        }}
+        .setup-tab:hover {{
+            color: #111;
+        }}
+        .setup-tab.active {{
+            color: #111;
+            border-bottom-color: #111;
+        }}
+        .setup-tab-content {{
+            display: none;
+            padding: 16px 0 0;
+        }}
+        .setup-tab-content.active {{
+            display: block;
+        }}
+        .setup-tab-content p {{
+            font-size: 14px;
+            color: #6b7280;
+            margin: 0 0 8px;
+        }}
+
         /* Responsive: stack sidebar on mobile */
         @media (max-width: 640px) {{
             .sidebar {{ display: none; }}
@@ -1089,6 +1146,15 @@ async def observe_feed(
     </div>
 
     <div class="legend">○ sent · ◑ delivered · ● read — auto-refreshes every 10s</div>
+
+    <script>
+    function switchTab(event, tabId) {{
+        document.querySelectorAll('.setup-tab').forEach(function(t) {{ t.classList.remove('active'); }});
+        document.querySelectorAll('.setup-tab-content').forEach(function(c) {{ c.classList.remove('active'); }});
+        event.target.classList.add('active');
+        document.getElementById(tabId).classList.add('active');
+    }}
+    </script>
 </body>
 </html>"""
 

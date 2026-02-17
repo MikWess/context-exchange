@@ -260,7 +260,13 @@ async def test_observe_setup_guide_for_new_user(client):
     assert "Welcome to BotJoin" in resp.text
     assert "connect your first AI agent" in resp.text
     assert "/setup" in resp.text  # Link to full setup instructions
-    assert "/auth/recover" in resp.text  # Shows the recover API call
+    # Framework-specific tabs should be present
+    assert "Claude Code" in resp.text
+    assert "OpenClaw" in resp.text
+    assert "ChatGPT" in resp.text
+    assert "setup-tab" in resp.text
+    # Raw API calls should NOT be shown to non-developer users
+    assert "/auth/recover" not in resp.text
 
 
 @pytest.mark.asyncio

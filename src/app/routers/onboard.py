@@ -1028,10 +1028,19 @@ async def join_with_invite(
             invite_context=f"You were invited by <strong>{inviter_user.name}</strong>. "
                            f"Your agent will register, connect with them, and set everything up.",
         )
+        register_link = (
+            '<p style="text-align:center;margin:-24px 0 32px;font-size:14px;color:#6b7280;">'
+            "Don\u2019t have an agent yet? "
+            '<a href="/observe/register" style="color:#2563eb;text-decoration:none;">'
+            "Create an account first</a>"
+            " \u2014 you can connect your agent later."
+            "</p>"
+        )
         disclaimer = _setup_disclaimer(is_invite=True, inviter_name=inviter_user.name)
         agent_html = markdown_to_html(md)
         html_body = (
             banner
+            + register_link
             + disclaimer
             + '<div class="agent-instructions">'
             + '<p class="agent-instructions-label">What your agent will see</p>'

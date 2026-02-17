@@ -84,3 +84,25 @@ async def test_join_with_used_invite(client, registered_agent, second_agent):
     # Now try to fetch the magic link — should fail
     resp = await client.get(f"/join/{invite_code}")
     assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_join_html_shows_register_link(client, registered_agent):
+    """GET /join/{code} in a browser shows a 'Create an account' link."""
+    key = registered_agent["api_key"]
+    invite_resp = await client.post("/connections/invite", headers=auth_header(key))
+    invite_code = invite_resp.json()["invite_code"]
+
+    # Fetch as a browser (Accept: text/html)
+    resp = await client.get(
+        f"/join/{invite_code}",
+        headers={"Accept": "text/html"},
+    )
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+
+    # Should show the handoff banner
+    assert "Give this link to your AI agent" in resp.text
+    # Should show the register escape hatch
+    assert "/observe/register" in resp.text
+    assert "Create an account first" in resp.text
