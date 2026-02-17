@@ -13,7 +13,7 @@ import ipaddress
 from datetime import timedelta
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,7 +26,7 @@ from src.app.auth import (
 )
 from src.app.config import EMAIL_VERIFICATION_EXPIRE_MINUTES
 from src.app.database import get_db
-from src.app.email import generate_verification_code, is_dev_mode, send_verification_email
+from src.app.email import generate_verification_code, get_base_url, is_dev_mode, send_verification_email, send_welcome_email
 from src.app.models import User, Agent, utcnow
 from src.app.schemas import (
     RegisterRequest,
@@ -166,7 +166,7 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/verify", response_model=RegisterResponse)
-async def verify(req: VerifyRequest, db: AsyncSession = Depends(get_db)):
+async def verify(req: VerifyRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """
     Step 2: Verify email and create the first agent.
 
@@ -213,6 +213,8 @@ async def verify(req: VerifyRequest, db: AsyncSession = Depends(get_db)):
 
     # If no agent_name, just verify the human — no agent created
     if not req.agent_name:
+        base_url = get_base_url(request)
+        await send_welcome_email(req.email, user.name, base_url)
         return RegisterResponse(
             user_id=user.id,
             message="Email verified. You can add an agent later via /auth/agents or /auth/recover.",
@@ -236,6 +238,9 @@ async def verify(req: VerifyRequest, db: AsyncSession = Depends(get_db)):
     )
     db.add(agent)
     await db.flush()
+
+    base_url = get_base_url(request)
+    await send_welcome_email(req.email, user.name, base_url, agent_name=req.agent_name)
 
     return RegisterResponse(
         user_id=user.id,

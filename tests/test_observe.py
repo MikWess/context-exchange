@@ -264,6 +264,35 @@ async def test_observe_setup_guide_for_new_user(client):
 
 
 @pytest.mark.asyncio
+async def test_observe_register_verify_sends_welcome_email(client):
+    """Observer registration verify triggers a welcome email (UI variant)."""
+    from unittest.mock import patch, AsyncMock
+
+    with patch("src.app.routers.observe.send_welcome_email", new_callable=AsyncMock, return_value=True) as mock_send:
+        # Register
+        resp = await client.post(
+            "/observe/register",
+            data={"name": "Welcome Person", "email": "welcome-obs@test.com"},
+        )
+        html = resp.text
+        code_start = html.find("your code is: ") + len("your code is: ")
+        code = html[code_start:code_start + 6]
+
+        # Verify
+        resp = await client.post(
+            "/observe/register/verify",
+            data={"email": "welcome-obs@test.com", "code": code},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 303
+
+        mock_send.assert_called_once()
+        args = mock_send.call_args[0]
+        assert args[0] == "welcome-obs@test.com"
+        assert args[1] == "Welcome Person"
+
+
+@pytest.mark.asyncio
 async def test_observe_login_has_register_link(client):
     """Login page has a link to create an account."""
     resp = await client.get("/observe")

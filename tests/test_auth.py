@@ -347,6 +347,52 @@ async def test_jwt_can_add_agent(client, registered_agent):
 
 
 @pytest.mark.asyncio
+async def test_verify_sends_welcome_email_agent_flow(client):
+    """Verify in agent flow triggers a welcome email with agent name."""
+    from unittest.mock import patch, AsyncMock
+
+    with patch("src.app.routers.auth.send_welcome_email", new_callable=AsyncMock, return_value=True) as mock_send:
+        data = await _register_and_verify(
+            client, "welcome-agent@test.com", "Welcome User", "My Agent", "claude",
+        )
+        assert data["api_key"] is not None
+
+        mock_send.assert_called_once()
+        args = mock_send.call_args[0]
+        assert args[0] == "welcome-agent@test.com"   # to_email
+        assert args[1] == "Welcome User"              # user_name
+        assert "http" in args[2]                       # base_url
+        assert mock_send.call_args.kwargs.get("agent_name") == "My Agent"
+
+
+@pytest.mark.asyncio
+async def test_verify_without_agent_sends_welcome_email_ui_variant(client):
+    """Verify without agent_name triggers the UI variant welcome email."""
+    from unittest.mock import patch, AsyncMock
+
+    with patch("src.app.routers.auth.send_welcome_email", new_callable=AsyncMock, return_value=True) as mock_send:
+        # Register
+        resp = await client.post("/auth/register", json={
+            "email": "welcome-human@test.com",
+            "name": "Human Only",
+        })
+        code = resp.json()["message"].split("code is: ")[1].split(".")[0]
+
+        # Verify without agent_name
+        resp = await client.post("/auth/verify", json={
+            "email": "welcome-human@test.com",
+            "code": code,
+        })
+        assert resp.status_code == 200
+
+        mock_send.assert_called_once()
+        args = mock_send.call_args[0]
+        assert args[0] == "welcome-human@test.com"
+        # No agent_name — UI variant
+        assert mock_send.call_args.kwargs.get("agent_name") is None
+
+
+@pytest.mark.asyncio
 async def test_login_verify_wrong_code_fails(client, registered_agent):
     """POST /auth/login/verify with bad code is rejected."""
     # Request login code

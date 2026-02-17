@@ -31,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.app.auth import verify_api_key, decode_jwt_token, create_jwt_token, API_KEY_PREFIX
 from src.app.config import EMAIL_VERIFICATION_EXPIRE_MINUTES
 from src.app.database import get_db
-from src.app.email import generate_verification_code, is_dev_mode, send_verification_email
+from src.app.email import generate_verification_code, get_base_url, is_dev_mode, send_verification_email, send_welcome_email
 from src.app.models import Agent, User, Connection, Thread, Message, utcnow
 
 router = APIRouter(tags=["observe"])
@@ -421,6 +421,7 @@ async def observe_register(
 
 @router.post("/observe/register/verify")
 async def observe_register_verify(
+    request: Request,
     email: str = Form(...),
     code: str = Form(...),
     db: AsyncSession = Depends(get_db),
@@ -473,6 +474,10 @@ async def observe_register_verify(
     user.verified = True
     user.verification_code = None
     user.verification_expires_at = None
+
+    # Welcome email — let them know about /setup for their first agent
+    base_url = get_base_url(request)
+    await send_welcome_email(email, user.name, base_url)
 
     # Sign them in automatically
     jwt_token = create_jwt_token(user.id)
