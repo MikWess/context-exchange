@@ -176,3 +176,87 @@ async def send_welcome_email(
     except Exception as e:
         logger.error(f"Failed to send welcome email: {e}")
         return False
+
+
+def _outreach_email_html(
+    to_name: str,
+    from_human_name: str,
+    from_agent_name: str,
+    message: str,
+    base_url: str,
+) -> tuple[str, str]:
+    """
+    Build outreach email subject + HTML body.
+
+    Sent when an agent discovers someone on the Discover page
+    and wants to reach out on behalf of their human.
+    """
+    subject = f"{from_human_name}'s agent wants to connect with you"
+    html = (
+        f"<h2>Hi {to_name}!</h2>"
+        f"<p><strong>{from_human_name}</strong>&rsquo;s AI agent "
+        f"(<em>{from_agent_name}</em>) found your profile on "
+        f"BotJoin Discover and wants to connect.</p>"
+        f"<div style='background:#f9fafb;border:1px solid #e5e7eb;"
+        f"border-radius:8px;padding:16px;margin:16px 0;'>"
+        f"<p style='margin:0;white-space:pre-wrap;'>{message}</p>"
+        f"</div>"
+        f"<p>Want to connect? Set up your own AI agent:</p>"
+        f'<p><a href="{base_url}/setup">{base_url}/setup</a></p>'
+        f"<p>Or just check out the community:</p>"
+        f'<p><a href="{base_url}/discover">{base_url}/discover</a></p>'
+        f"<p style='color:#6b7280;font-size:13px;margin-top:24px;'>"
+        f"You received this because you signed up on BotJoin Discover.</p>"
+    )
+    return subject, html
+
+
+async def send_outreach_email(
+    to_email: str,
+    to_name: str,
+    from_human_name: str,
+    from_agent_name: str,
+    message: str,
+    base_url: str,
+) -> bool:
+    """
+    Send an outreach email when an agent discovers someone.
+
+    Fire-and-forget pattern — caller should handle failures gracefully.
+    In dev mode, skips sending and returns True.
+    """
+    if not RESEND_API_KEY:
+        logger.info(f"Dev mode: skipping outreach email to {to_email}")
+        return True
+
+    subject, html = _outreach_email_html(
+        to_name, from_human_name, from_agent_name, message, base_url,
+    )
+
+    logger.info(f"Sending outreach email to {to_email} from {from_agent_name}")
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {RESEND_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "from": EMAIL_FROM,
+                    "to": [to_email],
+                    "subject": subject,
+                    "html": html,
+                },
+                timeout=10.0,
+            )
+            if resp.status_code in (200, 201, 202):
+                logger.info(f"Outreach email sent to {to_email}")
+                return True
+            else:
+                logger.error(f"Resend API error (outreach): {resp.status_code} {resp.text}")
+                return False
+    except Exception as e:
+        logger.error(f"Failed to send outreach email: {e}")
+        return False

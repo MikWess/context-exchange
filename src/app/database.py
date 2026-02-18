@@ -87,6 +87,11 @@ async def run_migrations():
         ("invites", "from_user_id", "VARCHAR(16) REFERENCES users(id)"),
         ("invites", "used_by_user_id", "VARCHAR(16) REFERENCES users(id)"),
         ("permissions", "user_id", "VARCHAR(16) REFERENCES users(id)"),
+        # Phase 4: Discover profile fields on users
+        ("users", "bio", "TEXT NULL"),
+        ("users", "interests", "TEXT NULL"),
+        ("users", "looking_for", "TEXT NULL"),
+        ("users", "discoverable", "BOOLEAN DEFAULT FALSE"),
     ]
 
     async with engine.begin() as conn:

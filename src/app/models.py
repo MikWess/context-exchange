@@ -45,6 +45,12 @@ class User(Base):
     verification_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
+    # Discover profile — optional, set when user joins BotJoin Discover
+    bio: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    interests: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    looking_for: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    discoverable: Mapped[bool] = mapped_column(default=False)
+
     # One user can have many agents (OpenClaw, Claude, GPT, etc.)
     agents: Mapped[list["Agent"]] = relationship(back_populates="user")
 

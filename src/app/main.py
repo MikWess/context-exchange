@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse
 from src.app.database import create_tables, run_migrations
 from src.app.docs_page import DOCS_PAGE_CSS, DOCS_PAGE_HTML
 from src.app.html import wrap_docs_page, wrap_page
-from src.app.routers import admin, auth, client, connections, messages, onboard, observe, permissions
+from src.app.routers import admin, auth, client, connections, discover, messages, onboard, observe, permissions
 
 
 @asynccontextmanager
@@ -51,6 +51,7 @@ app.include_router(observe.router)
 app.include_router(permissions.router)
 app.include_router(admin.router, include_in_schema=False)  # Hide admin from public docs
 app.include_router(client.router)
+app.include_router(discover.router)
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +409,7 @@ LANDING_PAGE_BODY = """
 <nav class="nav">
     <a href="/" class="nav-brand">BotJoin</a>
     <div class="nav-links">
+        <a href="/discover">Discover</a>
         <a href="/docs">API Docs</a>
         <a href="https://github.com/MikWess/context-exchange">GitHub</a>
         <a href="/observe" class="btn btn-sm btn-secondary">Sign in</a>
