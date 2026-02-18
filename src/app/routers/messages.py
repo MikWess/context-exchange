@@ -299,7 +299,7 @@ async def stream_messages(
     this in a loop:
 
     1. GET /messages/stream?timeout=30
-    2. Server holds the connection open, checking every 2 seconds
+    2. Server holds the connection open, checking every 5 seconds
     3. As soon as a message arrives → returned immediately
     4. If nothing arrives in 30 seconds → returns empty {messages: [], count: 0}
     5. Your agent immediately calls /messages/stream again → loop continues
@@ -307,8 +307,8 @@ async def stream_messages(
     Works from any device, behind any firewall. No public URL needed.
     Messages are marked as "delivered" when returned, just like /messages/inbox.
     """
-    # Check every 2 seconds for new messages
-    poll_interval = 2
+    # Check every 5 seconds for new messages
+    poll_interval = 5
     elapsed = 0
 
     while elapsed < timeout:

@@ -10,6 +10,8 @@ Tables:
 - Message: A single context exchange within a thread
 - Announcement: A platform-wide system message
 - AnnouncementRead: Tracks which agents have seen which announcements
+- Outreach: An outreach message from an agent to a Surge profile
+- OutreachReply: A reply from a Surge user to an outreach message
 """
 import uuid
 from datetime import datetime
@@ -50,6 +52,15 @@ class User(Base):
     interests: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     looking_for: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     discoverable: Mapped[bool] = mapped_column(default=False)
+
+    # Bento profile fields — viral, value-focused profile modules
+    superpower: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    current_project: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    need_help_with: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    dream_collab: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    fun_fact: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    education: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    photo_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # One user can have many agents (OpenClaw, Claude, GPT, etc.)
     agents: Mapped[list["Agent"]] = relationship(back_populates="user")
@@ -238,4 +249,49 @@ class AnnouncementRead(Base):
     __table_args__ = (
         # Each agent reads each announcement at most once
         Index("ix_announcement_read_lookup", "announcement_id", "agent_id", unique=True),
+    )
+
+
+class Outreach(Base):
+    """
+    An outreach message from an agent to a Surge profile.
+    Stored in-app so the recipient can see and reply from their dashboard.
+    Also triggers a notification email.
+    """
+    __tablename__ = "outreach"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_uuid)
+    # The agent that called /discover/profiles/{id}/reach-out
+    from_agent_id: Mapped[str] = mapped_column(String(16), ForeignKey("agents.id"), nullable=False)
+    # The Surge user being reached out to
+    to_user_id: Mapped[str] = mapped_column(String(16), ForeignKey("users.id"), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    # sent → read → replied → archived
+    status: Mapped[str] = mapped_column(String(20), default="sent")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    read_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("ix_outreach_to_user", "to_user_id", "status"),
+    )
+
+
+class OutreachReply(Base):
+    """
+    A reply from a Surge user to an outreach message.
+    The sending agent can retrieve replies via the API.
+    """
+    __tablename__ = "outreach_replies"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_uuid)
+    outreach_id: Mapped[str] = mapped_column(String(16), ForeignKey("outreach.id"), nullable=False)
+    # The Surge user replying
+    from_user_id: Mapped[str] = mapped_column(String(16), ForeignKey("users.id"), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    # sent → delivered (agent fetched) → read (agent acked)
+    status: Mapped[str] = mapped_column(String(20), default="sent")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    __table_args__ = (
+        Index("ix_outreach_reply_outreach", "outreach_id"),
     )

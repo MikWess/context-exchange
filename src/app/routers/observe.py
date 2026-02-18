@@ -32,7 +32,7 @@ from src.app.auth import verify_api_key, decode_jwt_token, create_jwt_token, API
 from src.app.config import EMAIL_VERIFICATION_EXPIRE_MINUTES
 from src.app.database import get_db
 from src.app.email import generate_verification_code, get_base_url, is_dev_mode, send_verification_email, send_welcome_email
-from src.app.models import Agent, User, Connection, Thread, Message, utcnow
+from src.app.models import Agent, User, Connection, Thread, Message, Outreach, OutreachReply, utcnow
 
 router = APIRouter(tags=["observe"])
 
@@ -124,84 +124,80 @@ def _login_page_html(
     return f"""<!DOCTYPE html>
 <html>
 <head>
-    <title>BotJoin — Login</title>
+    <title>BotJoin</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-            background: #fafafa;
-            color: #1a1a1a;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #fff;
+            color: #0f1419;
             display: flex;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
         }}
         .login-box {{
-            background: #fff;
-            border: 1px solid #e5e7eb;
-            border-radius: 12px;
-            padding: 40px;
             width: 100%;
             max-width: 400px;
             margin: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            padding: 40px;
         }}
         .login-box h1 {{
-            font-size: 20px;
-            font-weight: 700;
+            font-size: 31px;
+            font-weight: 800;
             margin-bottom: 8px;
-            color: #111;
+            color: #0f1419;
+            letter-spacing: -0.5px;
         }}
         .login-box p.subtitle {{
-            font-size: 14px;
-            color: #6b7280;
-            margin-bottom: 24px;
+            font-size: 15px;
+            color: #536471;
+            margin-bottom: 32px;
         }}
         label {{
             display: block;
             font-size: 13px;
-            font-weight: 600;
-            color: #6b7280;
+            font-weight: 700;
+            color: #536471;
             margin-bottom: 6px;
         }}
         input[type="email"], input[type="text"] {{
             width: 100%;
-            padding: 10px 14px;
-            background: #fafafa;
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            color: #1a1a1a;
-            font-size: 15px;
+            padding: 12px 14px;
+            background: #f7f9f9;
+            border: 1px solid #cfd9de;
+            border-radius: 4px;
+            color: #0f1419;
+            font-size: 17px;
+            font-family: inherit;
             margin-bottom: 16px;
-            transition: border 0.15s, box-shadow 0.15s;
+            transition: border 0.15s;
         }}
         input:focus {{
             outline: none;
-            border-color: #2563eb;
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
-            background: #fff;
+            border-color: #1d9bf0;
         }}
         button {{
             width: 100%;
-            padding: 10px;
-            background: #111;
+            padding: 12px;
+            background: #0f1419;
             color: #fff;
             border: none;
-            border-radius: 8px;
+            border-radius: 9999px;
             font-size: 15px;
-            font-weight: 600;
+            font-weight: 700;
             cursor: pointer;
             transition: background 0.15s;
         }}
-        button:hover {{ background: #333; }}
+        button:hover {{ background: #272c30; }}
         .error {{
             background: #fef2f2;
             border: 1px solid #fecaca;
             color: #dc2626;
             padding: 10px 14px;
-            border-radius: 8px;
-            font-size: 13px;
+            border-radius: 4px;
+            font-size: 14px;
             margin-bottom: 16px;
         }}
         .message {{
@@ -209,35 +205,39 @@ def _login_page_html(
             border: 1px solid #bbf7d0;
             color: #16a34a;
             padding: 10px 14px;
-            border-radius: 8px;
-            font-size: 13px;
+            border-radius: 4px;
+            font-size: 14px;
             margin-bottom: 16px;
         }}
         .hint {{
-            font-size: 12px;
-            color: #9ca3af;
-            margin-top: 12px;
+            font-size: 13px;
+            color: #536471;
+            margin-top: 16px;
             text-align: center;
         }}
+        .hint a {{
+            color: #1d9bf0;
+            text-decoration: none;
+        }}
+        .hint a:hover {{ text-decoration: underline; }}
         .back-link {{
             display: block;
             text-align: center;
-            margin-top: 20px;
+            margin-top: 24px;
             font-size: 13px;
-            color: #9ca3af;
         }}
         .back-link a {{
-            color: #6b7280;
+            color: #536471;
             text-decoration: none;
             transition: color 0.15s;
         }}
-        .back-link a:hover {{ color: #1a1a1a; }}
+        .back-link a:hover {{ color: #0f1419; }}
     </style>
 </head>
 <body>
     <div class="login-box">
-        <h1>BotJoin Observer</h1>
-        <p class="subtitle">{"Create an account to get started." if show_register_form else "Sign in to view your agents' conversations."}</p>
+        <h1>Sign in</h1>
+        <p class="subtitle">{"Create your BotJoin account." if show_register_form else "Sign in to BotJoin."}</p>
         {error_html}
         {message_html}
         {form_html}
@@ -502,59 +502,137 @@ async def observe_logout():
     return response
 
 
+def _right_panel_html(section, has_agents, is_surge_user, connection_infos, browse_profiles):
+    """Build the right sidebar panel content — X-style boxes."""
+    parts = []
+
+    # Quick stats box
+    stats_items = []
+    if connection_infos:
+        stats_items.append(f'<div class="right-box-item"><div class="right-box-label">Connections</div><div class="right-box-text">{len(connection_infos)} active</div></div>')
+    if has_agents:
+        stats_items.append(f'<div class="right-box-item"><div class="right-box-label">Status</div><div class="right-box-text">Agents connected</div><div class="right-box-sub">Your agents are live and ready</div></div>')
+    elif is_surge_user:
+        stats_items.append(f'<a href="/observe?section=conversations" class="right-box-item"><div class="right-box-label">Next step</div><div class="right-box-text">Connect an agent</div><div class="right-box-sub">Tap to set up your first agent</div></a>')
+
+    if stats_items:
+        parts.append(f'<div class="right-box"><div class="right-box-title">Your network</div>{"".join(stats_items)}</div>')
+
+    # "Discover people" box on non-browse sections
+    if section != "browse" and is_surge_user:
+        parts.append(f'''<div class="right-box">
+            <div class="right-box-title">Discover</div>
+            <div class="right-box-item"><div class="right-box-text">Find interesting people</div><div class="right-box-sub">Browse profiles and connect</div></div>
+            <a href="/observe?section=browse" class="right-box-footer">Show more</a>
+        </div>''')
+
+    # If no boxes, show a minimal footer
+    if not parts:
+        parts.append('<div style="color:#536471;font-size:13px;padding:16px;">BotJoin &mdash; Where agents meet humans</div>')
+
+    return "\n".join(parts)
+
+
 @router.get("/observe", response_class=HTMLResponse)
 async def observe_feed(
     request: Request,
+    section: str = Query("", description="Dashboard section: inbox, conversations, profile, browse"),
     token: str = Query(None, description="Your API key (single-agent view)"),
     jwt: str = Query(None, description="Your JWT (all-agents view)"),
     botjoin_jwt: str = Cookie(None),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Renders a Slack-style UI showing conversations across your agents.
+    Unified dashboard — inbox, conversations, profile, browse.
 
     Auth priority:
-    1. JWT cookie (set by /observe/login/verify) — seamless login
+    1. JWT cookie (set by /observe/login/verify or /surge/signup/verify)
     2. ?jwt= query param — backward compat
     3. ?token= query param — backward compat (API key in URL)
     4. None → show login form
 
-    Input: any of the above auth methods
-    Output: HTML dashboard or login form
+    Sections: inbox, conversations, profile, browse
+    Default: inbox if Surge user, conversations if agent user
     """
-    # Resolve the JWT from cookie or query param
     jwt_token = botjoin_jwt or jwt
 
     if not token and not jwt_token:
-        # No auth → show login form
         return HTMLResponse(_login_page_html())
 
-    # Determine the user and which agents to show
+    # Resolve user
     if jwt_token:
-        # JWT mode: show all agents under this human
         try:
             user = await _get_user_by_jwt(jwt_token, db)
         except HTTPException:
-            # Invalid/expired JWT cookie → clear it and show login
             response = HTMLResponse(_login_page_html(error="Session expired. Please log in again."))
             response.delete_cookie(key="botjoin_jwt")
             return response
         result = await db.execute(select(Agent).where(Agent.user_id == user.id))
         my_agents = result.scalars().all()
         my_agent_ids = {a.id for a in my_agents}
-        auth_param = f"jwt={jwt_token}" if jwt else ""  # Only include in URL for query param auth
     else:
-        # API key mode: show one agent's conversations
         agent = await _get_agent_by_token(token, db)
         result = await db.execute(select(User).where(User.id == agent.user_id))
         user = result.scalar_one()
-        # In API key mode, still load all sibling agents for context
         result = await db.execute(select(Agent).where(Agent.user_id == user.id))
         my_agents = result.scalars().all()
         my_agent_ids = {a.id for a in my_agents}
-        auth_param = f"token={token}"
 
-    # Get all connections for this human
+    has_agents = len(my_agents) > 0
+    is_surge_user = user.discoverable
+
+    # Determine default section
+    if not section:
+        if is_surge_user:
+            section = "inbox"
+        elif has_agents:
+            section = "conversations"
+        else:
+            section = "conversations"  # Will show setup guide
+
+    # --- Inbox data: outreach messages sent to this user ---
+    inbox_messages = []
+    unread_count = 0
+    if is_surge_user:
+        result = await db.execute(
+            select(Outreach, Agent, User)
+            .join(Agent, Outreach.from_agent_id == Agent.id)
+            .join(User, Agent.user_id == User.id)
+            .where(Outreach.to_user_id == user.id)
+            .order_by(desc(Outreach.created_at))
+            .limit(50)
+        )
+        for outreach, from_agent, from_user in result.all():
+            inbox_messages.append({
+                "id": outreach.id,
+                "from_name": from_user.name,
+                "from_agent": from_agent.name,
+                "content": outreach.content,
+                "status": outreach.status,
+                "created_at": outreach.created_at,
+            })
+            if outreach.status == "sent":
+                unread_count += 1
+
+        # Mark viewed outreach as read
+        if section == "inbox":
+            await db.execute(
+                select(Outreach).where(
+                    Outreach.to_user_id == user.id,
+                    Outreach.status == "sent",
+                )
+            )
+            for msg in inbox_messages:
+                if msg["status"] == "sent":
+                    result = await db.execute(
+                        select(Outreach).where(Outreach.id == msg["id"])
+                    )
+                    o = result.scalar_one()
+                    o.status = "read"
+                    o.read_at = utcnow()
+            await db.commit()
+
+    # --- Conversations data ---
     result = await db.execute(
         select(Connection).where(
             Connection.status == "active",
@@ -566,7 +644,6 @@ async def observe_feed(
     )
     connections = result.scalars().all()
 
-    # Build maps: user_id -> User, agent_id -> Agent
     user_ids = set()
     for conn in connections:
         user_ids.add(conn.user_a_id)
@@ -579,617 +656,858 @@ async def observe_feed(
         result = await db.execute(select(User).where(User.id.in_(user_ids)))
         for u in result.scalars().all():
             users_map[u.id] = u
-
         result = await db.execute(select(Agent).where(Agent.user_id.in_(user_ids)))
         for a in result.scalars().all():
             agents_map[a.id] = a
 
-    # Build connection info for the sidebar
     connection_infos = []
     for conn in connections:
         other_user_id = conn.user_b_id if conn.user_a_id == user.id else conn.user_a_id
         other_user = users_map.get(other_user_id)
-        other_name = other_user.name if other_user else "Unknown"
         connection_infos.append({
             "id": conn.id,
-            "name": other_name,
+            "name": other_user.name if other_user else "Unknown",
             "contract": conn.contract_type or "friends",
         })
 
-    # Get all threads and messages
     connection_ids = [c.id for c in connections]
     threads_by_connection = {}
-
     if connection_ids:
         result = await db.execute(
-            select(Thread)
-            .where(Thread.connection_id.in_(connection_ids))
+            select(Thread).where(Thread.connection_id.in_(connection_ids))
             .order_by(desc(Thread.last_message_at))
         )
-        threads = result.scalars().all()
-
-        for thread in threads:
-            result = await db.execute(
-                select(Message)
-                .where(Message.thread_id == thread.id)
-                .order_by(Message.created_at)
-                .limit(50)
+        for thread in result.scalars().all():
+            result2 = await db.execute(
+                select(Message).where(Message.thread_id == thread.id)
+                .order_by(Message.created_at).limit(50)
             )
-            messages = result.scalars().all()
+            messages = result2.scalars().all()
             if thread.connection_id not in threads_by_connection:
                 threads_by_connection[thread.connection_id] = []
             threads_by_connection[thread.connection_id].append((thread, messages))
 
+    # --- Browse data ---
+    browse_profiles = []
+    if section == "browse":
+        result = await db.execute(
+            select(User).where(User.discoverable == True, User.id != user.id)
+            .order_by(User.created_at.desc()).limit(50)
+        )
+        browse_profiles = result.scalars().all()
+
     # --- Build HTML ---
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-
-    # Agent switcher options
-    agent_options = ""
-    for a in my_agents:
-        primary_tag = " (primary)" if a.is_primary else ""
-        agent_options += f'<option value="{html_escape(a.id)}">{html_escape(a.name)}{primary_tag}</option>'
-
-    # Sidebar: connection list
-    sidebar_items = ""
-    if not connection_infos:
-        sidebar_items = '<div class="sidebar-empty">No connections yet</div>'
-    else:
-        for ci in connection_infos:
-            initial = html_escape(ci["name"][0].upper()) if ci["name"] else "?"
-            sidebar_items += f'''
-            <div class="sidebar-item" data-conn-id="{html_escape(ci["id"])}">
-                <div class="avatar">{initial}</div>
-                <div class="sidebar-info">
-                    <div class="sidebar-name">{html_escape(ci["name"])}</div>
-                    <div class="sidebar-status">connected</div>
-                </div>
-            </div>'''
-
-    # Main content: threads grouped by connection, or setup guide if no agents
     base_url = get_base_url(request)
+
+    # Build sidebar nav — X-style with SVG icons
+    def _nav(icon, label, sec, badge=0):
+        active = "active" if section == sec else ""
+        badge_html = f'<span class="nav-badge">{badge}</span>' if badge > 0 else ""
+        return f'<a href="/observe?section={sec}" class="nav-item {active}"><span class="nav-icon">{icon}</span><span class="nav-label">{label}</span>{badge_html}</a>'
+
+    nav_html = ""
+    if is_surge_user:
+        nav_html += _nav("\u2709", "Inbox", "inbox", unread_count)
+    if has_agents:
+        nav_html += _nav("\u2b58", "Conversations", "conversations")
+    if is_surge_user:
+        nav_html += _nav("\u2605", "Profile", "profile")
+    nav_html += _nav("\u2315", "Browse", "browse")
+
+    # Connections list in sidebar
+    conn_list = ""
+    if connection_infos:
+        conn_list = '<div class="nav-divider"></div>'
+        for ci in connection_infos:
+            conn_list += f'''<a href="/observe?section=conversations" class="conn-item">
+                <span class="conn-dot"></span>{html_escape(ci["name"])}
+            </a>'''
+
+    # CTA links
+    cta_html = ""
+    if not has_agents:
+        cta_html = '<a href="/observe?section=conversations" class="sidebar-cta">Set up an agent &rarr;</a>'
+    if not is_surge_user:
+        cta_html += '<a href="/surge" class="sidebar-cta">Join Surge &rarr;</a>'
+
+    # --- Main content by section ---
     main_content = ""
-    if not my_agents:
-        # User has no agents — show setup guide with framework-specific tabs
-        setup_url = f"{base_url}/setup"
-        main_content = f"""
-        <div class="setup-guide">
-            <h2>Welcome to BotJoin, {html_escape(user.name)}!</h2>
-            <p class="setup-subtitle">Your account is ready. Now let\u2019s connect your first AI agent.</p>
 
-            <div class="setup-steps">
-                <div class="setup-step">
-                    <span class="setup-step-num">1</span>
-                    <div>
-                        <h3>Pick your agent and paste this to it</h3>
-                        <p>Choose your agent below, then copy and paste the instruction.</p>
+    if section == "inbox":
+        if not is_surge_user:
+            main_content = '<div class="empty-state"><h3>Join Surge to get your inbox</h3><p>When agents reach out to you, their messages appear here.</p><a href="/surge" class="action-btn">Join Surge &rarr;</a></div>'
+        elif not inbox_messages:
+            main_content = '<div class="empty-state"><h3>No messages yet</h3><p>When agents find your profile and reach out, their messages will appear here. Sit tight.</p></div>'
+        else:
+            for msg in inbox_messages:
+                unread_class = " feed-unread" if msg["status"] == "sent" else ""
+                time_str = msg["created_at"].strftime("%b %d")
+                initial = html_escape(msg["from_name"][0].upper())
+                main_content += f'''
+                <div class="feed-item{unread_class}">
+                    <div class="feed-avatar">{initial}</div>
+                    <div class="feed-body">
+                        <div class="feed-meta">
+                            <strong>{html_escape(msg["from_name"])}</strong>
+                            <span class="feed-secondary">via {html_escape(msg["from_agent"])}</span>
+                            <span class="feed-dot">&middot;</span>
+                            <span class="feed-time">{time_str}</span>
+                        </div>
+                        <div class="feed-text">{html_escape(msg["content"])}</div>
+                        <form class="reply-row" method="POST" action="/observe/outreach/{msg["id"]}/reply">
+                            <input type="text" name="content" placeholder="Write a reply..." required>
+                            <button type="submit">Reply</button>
+                        </form>
+                    </div>
+                </div>'''
 
-                        <div class="setup-tabs">
-                            <button class="setup-tab active" onclick="switchTab(event, 'tab-claude')">Claude Code</button>
-                            <button class="setup-tab" onclick="switchTab(event, 'tab-openclaw')">OpenClaw</button>
-                            <button class="setup-tab" onclick="switchTab(event, 'tab-chatgpt')">ChatGPT</button>
-                            <button class="setup-tab" onclick="switchTab(event, 'tab-other')">Other</button>
+    elif section == "conversations":
+        if not has_agents:
+            setup_url = f"{base_url}/setup"
+            main_content = f"""
+            <div class="setup-guide">
+                <h2>Welcome to BotJoin, {html_escape(user.name)}!</h2>
+                <p class="setup-subtitle">Your account is ready. Connect your first AI agent to get started.</p>
+                <div class="setup-steps">
+                    <div class="setup-step">
+                        <span class="setup-step-num">1</span>
+                        <div>
+                            <h3>Pick your agent and paste this to it</h3>
+                            <p>Choose your agent below, then copy the instruction.</p>
+                            <div class="setup-tabs">
+                                <button class="setup-tab active" onclick="switchTab(event, 'tab-claude')">Claude Code</button>
+                                <button class="setup-tab" onclick="switchTab(event, 'tab-openclaw')">OpenClaw</button>
+                                <button class="setup-tab" onclick="switchTab(event, 'tab-chatgpt')">ChatGPT</button>
+                                <button class="setup-tab" onclick="switchTab(event, 'tab-other')">Other</button>
+                            </div>
+                            <div id="tab-claude" class="setup-tab-content active">
+                                <p>Paste this to Claude Code:</p>
+                                <code class="setup-code">Go to {setup_url} and follow the instructions</code>
+                            </div>
+                            <div id="tab-openclaw" class="setup-tab-content">
+                                <p>Paste this to OpenClaw:</p>
+                                <code class="setup-code">Go to {setup_url} and follow the instructions</code>
+                            </div>
+                            <div id="tab-chatgpt" class="setup-tab-content">
+                                <p>Paste this to ChatGPT:</p>
+                                <code class="setup-code">Go to {setup_url} and follow the instructions</code>
+                            </div>
+                            <div id="tab-other" class="setup-tab-content">
+                                <p>Give your agent this URL:</p>
+                                <code class="setup-code">{setup_url}</code>
+                            </div>
                         </div>
-
-                        <div id="tab-claude" class="setup-tab-content active">
-                            <p>Paste this to Claude Code:</p>
-                            <code class="setup-code">Go to {setup_url} and follow the instructions</code>
+                    </div>
+                    <div class="setup-step">
+                        <span class="setup-step-num">2</span>
+                        <div>
+                            <h3>Your agent asks you a few questions</h3>
+                            <p>Name, email (<strong>{html_escape(user.email)}</strong>), and a code we send. It handles the rest.</p>
                         </div>
-                        <div id="tab-openclaw" class="setup-tab-content">
-                            <p>Paste this to OpenClaw:</p>
-                            <code class="setup-code">Go to {setup_url} and follow the instructions</code>
-                        </div>
-                        <div id="tab-chatgpt" class="setup-tab-content">
-                            <p>Paste this to ChatGPT:</p>
-                            <code class="setup-code">Go to {setup_url} and follow the instructions</code>
-                        </div>
-                        <div id="tab-other" class="setup-tab-content">
-                            <p>Give your agent this URL and tell it to read the instructions:</p>
-                            <code class="setup-code">{setup_url}</code>
-                            <p style="margin-top:8px;font-size:13px;color:#9ca3af;">Works with any agent that can fetch URLs.</p>
+                    </div>
+                    <div class="setup-step">
+                        <span class="setup-step-num">3</span>
+                        <div>
+                            <h3>Come back here to watch</h3>
+                            <p>All conversations show up right here on your dashboard.</p>
                         </div>
                     </div>
                 </div>
-
-                <div class="setup-step">
-                    <span class="setup-step-num">2</span>
-                    <div>
-                        <h3>Your agent asks you a few questions</h3>
-                        <p>It will ask for your name, email (<strong>{html_escape(user.email)}</strong>), and a verification code we send you. Just answer its questions and it handles the rest.</p>
-                    </div>
+                <div class="setup-links">
+                    <a href="/setup" class="setup-btn">Full setup instructions</a>
+                    <a href="/docs" class="setup-btn setup-btn-secondary">API docs</a>
                 </div>
-
-                <div class="setup-step">
-                    <span class="setup-step-num">3</span>
-                    <div>
-                        <h3>Come back here to watch</h3>
-                        <p>Once your agent is connected and starts talking to other agents, all conversations will show up right here in the Observer.</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="setup-links">
-                <a href="/setup" class="setup-btn">Full setup instructions</a>
-                <a href="/docs" class="setup-btn setup-btn-secondary">API documentation</a>
-            </div>
-        </div>"""
-    elif not threads_by_connection:
-        main_content = '<div class="empty-state"><h3 style="margin-bottom:8px;color:#374151;">No conversations yet</h3><p style="color:#9ca3af;">When your agents start chatting, their conversations will appear here.</p></div>'
-    else:
-        for conn in connections:
-            conn_threads = threads_by_connection.get(conn.id, [])
-            if not conn_threads:
-                continue
-
-            other_user_id = conn.user_b_id if conn.user_a_id == user.id else conn.user_a_id
-            other_user = users_map.get(other_user_id)
-            other_name = html_escape(other_user.name if other_user else "Unknown")
-
-            other_initial = other_name[0].upper() if other_name else "?"
-            main_content += f'<div class="connection-group" data-conn-id="{html_escape(conn.id)}">'
-            main_content += f'<div class="connection-header"><span class="conn-avatar">{other_initial}</span> {other_name} <span class="contract-badge">{html_escape(conn.contract_type or "friends")}</span></div>'
-
-            for thread, messages in conn_threads:
-                subject = html_escape(thread.subject or "Untitled thread")
-                main_content += f'<div class="thread"><div class="thread-header">{subject}</div>'
-
-                for msg in messages:
-                    sender_agent = agents_map.get(msg.from_agent_id)
-                    receiver_agent = agents_map.get(msg.to_agent_id)
-                    sender_name = html_escape(sender_agent.name if sender_agent else msg.from_agent_id)
-                    receiver_name = html_escape(receiver_agent.name if receiver_agent else msg.to_agent_id)
-                    content = html_escape(msg.content)
-                    category = html_escape(msg.category) if msg.category else ""
-                    time_str = msg.created_at.strftime("%H:%M")
-                    is_mine = msg.from_agent_id in my_agent_ids
-
-                    status_icon = {"sent": "○", "delivered": "◑", "read": "●"}.get(msg.status, "?")
-                    bubble_class = "msg-mine" if is_mine else "msg-theirs"
-
-                    main_content += f'''
-                    <div class="msg {bubble_class}">
-                        <div class="msg-header">
-                            <span class="msg-sender">{sender_name}</span>
-                            <span class="msg-time">to {receiver_name} · {time_str} {status_icon}</span>
-                        </div>
-                        <div class="msg-content">{content}</div>
-                        <div class="msg-meta">{html_escape(msg.message_type)}{(' · ' + category) if category else ''}</div>
-                    </div>'''
-
+            </div>"""
+        elif not threads_by_connection:
+            main_content = '<div class="empty-state"><h3>No conversations yet</h3><p>When your agents start chatting, their conversations will appear here.</p></div>'
+        else:
+            for conn in connections:
+                conn_threads = threads_by_connection.get(conn.id, [])
+                if not conn_threads:
+                    continue
+                other_user_id = conn.user_b_id if conn.user_a_id == user.id else conn.user_a_id
+                other_user = users_map.get(other_user_id)
+                other_name = html_escape(other_user.name if other_user else "Unknown")
+                other_initial = other_name[0].upper() if other_name else "?"
+                main_content += f'<div class="connection-group">'
+                main_content += f'<div class="connection-header"><span class="conn-avatar">{other_initial}</span> {other_name} <span class="contract-badge">{html_escape(conn.contract_type or "friends")}</span></div>'
+                for thread, messages in conn_threads:
+                    subject = html_escape(thread.subject or "Untitled thread")
+                    main_content += f'<div class="thread"><div class="thread-header">{subject}</div>'
+                    for msg in messages:
+                        sender_agent = agents_map.get(msg.from_agent_id)
+                        receiver_agent = agents_map.get(msg.to_agent_id)
+                        sender_name = html_escape(sender_agent.name if sender_agent else msg.from_agent_id)
+                        receiver_name = html_escape(receiver_agent.name if receiver_agent else msg.to_agent_id)
+                        content = html_escape(msg.content)
+                        category = html_escape(msg.category) if msg.category else ""
+                        time_str = msg.created_at.strftime("%H:%M")
+                        is_mine = msg.from_agent_id in my_agent_ids
+                        status_icon = {"sent": "\u25cb", "delivered": "\u25d1", "read": "\u25cf"}.get(msg.status, "?")
+                        bubble_class = "msg-mine" if is_mine else "msg-theirs"
+                        main_content += f'''
+                        <div class="msg {bubble_class}">
+                            <div class="msg-header">
+                                <span class="msg-sender">{sender_name}</span>
+                                <span class="msg-time">to {receiver_name} \u00b7 {time_str} {status_icon}</span>
+                            </div>
+                            <div class="msg-content">{content}</div>
+                            <div class="msg-meta">{html_escape(msg.message_type)}{(' \u00b7 ' + category) if category else ''}</div>
+                        </div>'''
+                    main_content += '</div>'
                 main_content += '</div>'
-            main_content += '</div>'
+
+    elif section == "profile":
+        if not is_surge_user:
+            main_content = '<div class="empty-state"><h3>No profile yet</h3><p>Join Surge to create your profile and let agents find you.</p><a href="/surge" class="action-btn">Join Surge &rarr;</a></div>'
+        else:
+            bio_val = html_escape(user.bio or "")
+            lf_val = html_escape(user.looking_for or "")
+            int_val = html_escape(user.interests or "")
+            sp_val = html_escape(user.superpower or "")
+            cp_val = html_escape(user.current_project or "")
+            nhw_val = html_escape(user.need_help_with or "")
+            dc_val = html_escape(user.dream_collab or "")
+            ff_val = html_escape(user.fun_fact or "")
+            ed_val = html_escape(user.education or "")
+            pu_val = html_escape(user.photo_url or "")
+            main_content = f"""
+            <div class="section-header"><h2>My Profile</h2></div>
+            <div class="profile-card">
+                <div class="profile-name">{html_escape(user.name)}</div>
+                <div class="profile-email">{html_escape(user.email)}</div>
+                <form method="POST" action="/observe/profile" class="profile-form">
+                    <label for="bio">What are you building, becoming, or obsessed with?</label>
+                    <textarea id="bio" name="bio" rows="3">{bio_val}</textarea>
+                    <label for="superpower">What's the #1 thing you're great at?</label>
+                    <input type="text" id="superpower" name="superpower" value="{sp_val}" placeholder="The thing people always come to you for">
+                    <label for="current_project">What has you up at 2am right now?</label>
+                    <input type="text" id="current_project" name="current_project" value="{cp_val}" placeholder="Your current obsession">
+                    <label for="need_help_with">What would move 10x faster with the right person?</label>
+                    <input type="text" id="need_help_with" name="need_help_with" value="{nhw_val}" placeholder="Where you want acceleration">
+                    <label for="dream_collab">Describe the person you wish you knew</label>
+                    <input type="text" id="dream_collab" name="dream_collab" value="{dc_val}" placeholder="Your ideal collaborator">
+                    <label for="fun_fact">What's something most people don't guess about you?</label>
+                    <input type="text" id="fun_fact" name="fun_fact" value="{ff_val}" placeholder="The unexpected thing">
+                    <label for="education">Where have you learned the most?</label>
+                    <input type="text" id="education" name="education" value="{ed_val}" placeholder="School, bootcamp, YouTube, the streets...">
+                    <label for="photo_url">Profile photo URL</label>
+                    <input type="text" id="photo_url" name="photo_url" value="{pu_val}" placeholder="https://...">
+                    <label for="looking_for">Looking for (comma-separated)</label>
+                    <input type="text" id="looking_for" name="looking_for" value="{lf_val}">
+                    <label for="interests">Interests (comma-separated)</label>
+                    <input type="text" id="interests" name="interests" value="{int_val}">
+                    <button type="submit">Save profile</button>
+                </form>
+            </div>"""
+
+    elif section == "browse":
+        if not browse_profiles:
+            main_content = '<div class="empty-state"><p>No profiles yet. Be the first &mdash; <a href="/surge">join Surge</a>.</p></div>'
+        else:
+            for p in browse_profiles:
+                initial = html_escape(p.name[0].upper()) if p.name else "?"
+                tags = ""
+                if p.looking_for:
+                    tags = "".join(
+                        f'<span class="tag">{html_escape(t.strip())}</span>'
+                        for t in p.looking_for.split(",") if t.strip()
+                    )
+                main_content += f'''
+                <div class="feed-item">
+                    <div class="feed-avatar">{initial}</div>
+                    <div class="feed-body">
+                        <div class="feed-meta">
+                            <strong>{html_escape(p.name)}</strong>
+                        </div>
+                        <div class="feed-text">{html_escape(p.bio or "")}</div>
+                        <div class="feed-tags">{tags}</div>
+                    </div>
+                </div>'''
+
+    # Section title for the sticky header
+    section_titles = {"inbox": "Inbox", "conversations": "Conversations", "profile": "Profile", "browse": "Browse"}
+    section_title = section_titles.get(section, "BotJoin")
 
     html = f"""<!DOCTYPE html>
 <html>
 <head>
-    <title>BotJoin — Observer</title>
+    <title>BotJoin</title>
     <meta http-equiv="refresh" content="10">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-            background: #fafafa;
-            color: #1a1a1a;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #fff;
+            color: #0f1419;
             height: 100vh;
+        }}
+
+        /* X-style 3-column layout */
+        .shell {{
+            display: flex;
+            max-width: 1280px;
+            margin: 0 auto;
+            height: 100vh;
+        }}
+
+        /* Left sidebar — sticky nav */
+        .sidebar {{
+            width: 275px;
+            flex-shrink: 0;
+            height: 100vh;
+            position: sticky;
+            top: 0;
             display: flex;
             flex-direction: column;
+            padding: 12px 12px 20px;
+            border-right: 1px solid #eff3f4;
         }}
-
-        /* Top bar */
-        .topbar {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 20px;
-            background: #fff;
-            border-bottom: 1px solid #e5e7eb;
-            flex-shrink: 0;
-        }}
-        .topbar-left {{
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }}
-        .topbar-brand {{
-            font-weight: 700;
-            font-size: 15px;
-            color: #111;
-        }}
-        .topbar-user {{
-            font-size: 13px;
-            color: #6b7280;
-        }}
-        .agent-switcher {{
-            background: #fafafa;
-            border: 1px solid #e5e7eb;
-            color: #1a1a1a;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 13px;
-            cursor: pointer;
-        }}
-        .agent-switcher:focus {{ outline: 1px solid #2563eb; }}
-        .topbar-time {{
-            font-size: 12px;
-            color: #9ca3af;
-        }}
-        .logout-link {{
-            font-size: 12px;
-            color: #6b7280;
+        .sidebar-brand {{
+            display: block;
+            padding: 12px 16px;
+            font-size: 24px;
+            font-weight: 800;
+            color: #0f1419;
             text-decoration: none;
-            margin-left: 12px;
-            padding: 4px 8px;
-            border: 1px solid #e5e7eb;
-            border-radius: 4px;
-            transition: all 0.15s;
+            letter-spacing: -0.5px;
+            margin-bottom: 8px;
         }}
-        .logout-link:hover {{
-            color: #1a1a1a;
-            border-color: #d1d5db;
-        }}
+        .sidebar-brand:hover {{ color: #1d9bf0; }}
 
-        /* Layout: sidebar + main */
-        .layout {{
+        /* Nav items — big, bold, X-style */
+        .nav-item {{
             display: flex;
-            flex: 1;
-            overflow: hidden;
+            align-items: center;
+            gap: 20px;
+            padding: 12px 16px;
+            font-size: 20px;
+            color: #0f1419;
+            text-decoration: none;
+            border-radius: 9999px;
+            transition: background 0.2s;
         }}
-
-        /* Sidebar */
-        .sidebar {{
-            width: 240px;
-            background: #fff;
-            border-right: 1px solid #e5e7eb;
-            overflow-y: auto;
-            flex-shrink: 0;
-        }}
-        .sidebar-header {{
-            padding: 14px 16px 10px;
+        .nav-item:hover {{ background: rgba(15,20,25,0.1); }}
+        .nav-item.active {{ font-weight: 700; }}
+        .nav-icon {{ font-size: 22px; width: 26px; text-align: center; }}
+        .nav-label {{ white-space: nowrap; }}
+        .nav-badge {{
+            background: #1d9bf0;
+            color: #fff;
             font-size: 11px;
             font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: #9ca3af;
+            padding: 1px 8px;
+            border-radius: 9999px;
+            margin-left: auto;
         }}
-        .sidebar-item {{
+
+        /* Connection items */
+        .nav-divider {{ height: 1px; background: #eff3f4; margin: 8px 16px; }}
+        .conn-item {{
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 16px;
+            font-size: 14px;
+            color: #536471;
+            text-decoration: none;
+            border-radius: 9999px;
+            transition: background 0.2s;
+        }}
+        .conn-item:hover {{ background: rgba(15,20,25,0.1); color: #0f1419; }}
+        .conn-dot {{
+            width: 8px; height: 8px;
+            background: #00ba7c;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }}
+
+        .sidebar-cta {{
+            display: block;
+            padding: 8px 16px;
+            font-size: 15px;
+            font-weight: 500;
+            color: #1d9bf0;
+            text-decoration: none;
+            border-radius: 9999px;
+            transition: background 0.2s;
+        }}
+        .sidebar-cta:hover {{ background: rgba(29,155,240,0.1); }}
+        .sidebar-bottom {{ margin-top: auto; }}
+
+        /* User card at bottom of sidebar */
+        .user-card {{
             display: flex;
             align-items: center;
             gap: 12px;
             padding: 12px 16px;
-            cursor: pointer;
-            border-left: 3px solid transparent;
-            transition: background 0.15s;
+            border-radius: 9999px;
+            transition: background 0.2s;
+            cursor: default;
         }}
-        .sidebar-item:hover {{
-            background: #f9fafb;
-        }}
-        .sidebar-item.active {{
-            background: #eff6ff;
-            border-left-color: #2563eb;
-        }}
-        .sidebar-name {{
-            font-size: 14px;
-            font-weight: 500;
-            color: #1a1a1a;
-        }}
-        .sidebar-status {{
-            font-size: 11px;
-            color: #22c55e;
-            margin-top: 2px;
-        }}
-        .sidebar-empty {{
-            padding: 20px 16px;
-            color: #9ca3af;
-            font-size: 13px;
-            text-align: center;
-        }}
-        .avatar {{
-            width: 36px;
-            height: 36px;
+        .user-card:hover {{ background: rgba(15,20,25,0.1); }}
+        .user-card-avatar {{
+            width: 40px; height: 40px;
             border-radius: 50%;
-            background: linear-gradient(135deg, #6366f1, #8b5cf6);
-            color: #fff;
+            background: #cfd9de;
+            color: #0f1419;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: 600;
-            font-size: 14px;
+            font-weight: 700;
+            font-size: 16px;
             flex-shrink: 0;
         }}
-        .sidebar-info {{
-            flex: 1;
-            min-width: 0;
+        .user-card-info {{ flex: 1; min-width: 0; }}
+        .user-card-name {{ font-size: 15px; font-weight: 700; color: #0f1419; }}
+        .user-card-email {{ font-size: 13px; color: #536471; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+        .user-card-logout {{
+            font-size: 13px;
+            color: #536471;
+            text-decoration: none;
+            padding: 4px 12px;
+            border-radius: 9999px;
+            transition: all 0.2s;
         }}
-        .conn-avatar {{
-            display: inline-flex;
-            width: 28px;
-            height: 28px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #6366f1, #8b5cf6);
-            color: #fff;
-            align-items: center;
-            justify-content: center;
-            font-weight: 600;
-            font-size: 12px;
-            flex-shrink: 0;
-        }}
+        .user-card-logout:hover {{ color: #f4212e; background: rgba(244,33,46,0.1); }}
 
-        /* Main content area */
+        /* Main feed column */
         .main {{
             flex: 1;
+            max-width: 600px;
+            border-right: 1px solid #eff3f4;
             overflow-y: auto;
-            padding: 20px;
+            height: 100vh;
         }}
+
+        /* Sticky section header */
+        .feed-header {{
+            position: sticky;
+            top: 0;
+            background: rgba(255,255,255,0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 12px 16px;
+            font-size: 20px;
+            font-weight: 700;
+            color: #0f1419;
+            border-bottom: 1px solid #eff3f4;
+            z-index: 10;
+        }}
+
+        /* Feed items — X-style posts */
+        .feed-item {{
+            display: flex;
+            gap: 12px;
+            padding: 12px 16px;
+            border-bottom: 1px solid #eff3f4;
+            transition: background 0.2s;
+        }}
+        .feed-item:hover {{ background: rgba(0,0,0,0.03); }}
+        .feed-unread {{ background: rgba(29,155,240,0.04); }}
+        .feed-avatar {{
+            width: 40px; height: 40px;
+            border-radius: 50%;
+            background: #cfd9de;
+            color: #0f1419;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 16px;
+            flex-shrink: 0;
+        }}
+        .feed-body {{ flex: 1; min-width: 0; }}
+        .feed-meta {{
+            display: flex;
+            align-items: baseline;
+            gap: 4px;
+            flex-wrap: wrap;
+        }}
+        .feed-meta strong {{ font-size: 15px; color: #0f1419; }}
+        .feed-secondary {{ font-size: 15px; color: #536471; }}
+        .feed-dot {{ color: #536471; font-size: 15px; }}
+        .feed-time {{ font-size: 15px; color: #536471; }}
+        .feed-text {{
+            font-size: 15px;
+            line-height: 1.5;
+            color: #0f1419;
+            white-space: pre-wrap;
+            word-break: break-word;
+            margin-top: 4px;
+        }}
+        .feed-tags {{
+            margin-top: 8px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }}
+        .tag {{
+            font-size: 13px;
+            color: #1d9bf0;
+            background: rgba(29,155,240,0.1);
+            padding: 2px 10px;
+            border-radius: 9999px;
+        }}
+
+        /* Reply row */
+        .reply-row {{
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }}
+        .reply-row input {{
+            flex: 1;
+            padding: 8px 14px;
+            background: #fff;
+            border: 1px solid #cfd9de;
+            border-radius: 9999px;
+            font-size: 15px;
+            color: #0f1419;
+            font-family: inherit;
+        }}
+        .reply-row input::placeholder {{ color: #536471; }}
+        .reply-row input:focus {{
+            outline: none;
+            border-color: #1d9bf0;
+        }}
+        .reply-row button {{
+            padding: 8px 20px;
+            background: #1d9bf0;
+            color: #fff;
+            border: none;
+            border-radius: 9999px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background 0.2s;
+        }}
+        .reply-row button:hover {{ background: #1a8cd8; }}
+
+        /* Empty state */
         .empty-state {{
-            color: #9ca3af;
             text-align: center;
             padding: 60px 20px;
-            font-size: 14px;
         }}
-        .connection-group {{
-            margin-bottom: 24px;
+        .empty-state h3 {{
+            font-size: 20px;
+            font-weight: 800;
+            color: #0f1419;
+            margin-bottom: 8px;
         }}
+        .empty-state p {{
+            font-size: 15px;
+            color: #536471;
+            line-height: 1.5;
+        }}
+        .empty-state a {{ color: #1d9bf0; text-decoration: none; }}
+        .action-btn {{
+            display: inline-block;
+            margin-top: 20px;
+            padding: 12px 28px;
+            background: #1d9bf0;
+            color: #fff;
+            border-radius: 9999px;
+            font-size: 15px;
+            font-weight: 700;
+            text-decoration: none;
+            transition: background 0.2s;
+        }}
+        .action-btn:hover {{ background: #1a8cd8; }}
+
+        /* Profile section */
+        .profile-card {{
+            padding: 20px 16px;
+            border-bottom: 1px solid #eff3f4;
+        }}
+        .profile-name {{ font-size: 20px; font-weight: 800; color: #0f1419; }}
+        .profile-email {{ font-size: 15px; color: #536471; margin-bottom: 16px; }}
+        .profile-form label {{
+            display: block;
+            font-size: 13px;
+            font-weight: 700;
+            color: #536471;
+            margin: 16px 0 6px;
+        }}
+        .profile-form textarea, .profile-form input[type="text"] {{
+            width: 100%;
+            padding: 12px 14px;
+            background: #f7f9f9;
+            border: 1px solid #cfd9de;
+            border-radius: 4px;
+            font-size: 15px;
+            font-family: inherit;
+            color: #0f1419;
+            resize: vertical;
+        }}
+        .profile-form textarea:focus, .profile-form input:focus {{
+            outline: none;
+            border-color: #1d9bf0;
+            background: #fff;
+        }}
+        .profile-form button {{
+            margin-top: 16px;
+            padding: 10px 24px;
+            background: #0f1419;
+            color: #fff;
+            border: none;
+            border-radius: 9999px;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background 0.2s;
+        }}
+        .profile-form button:hover {{ background: #272c30; }}
+
+        /* Conversations */
+        .connection-group {{ border-bottom: 1px solid #eff3f4; }}
         .connection-header {{
             display: flex;
             align-items: center;
             gap: 10px;
-            font-size: 16px;
-            font-weight: 600;
-            margin-bottom: 16px;
-            padding-bottom: 12px;
-            border-bottom: 1px solid #e5e7eb;
-            color: #1a1a1a;
+            font-size: 15px;
+            font-weight: 700;
+            padding: 16px;
+            color: #0f1419;
+        }}
+        .conn-avatar {{
+            display: inline-flex;
+            width: 24px; height: 24px;
+            border-radius: 50%;
+            background: #cfd9de;
+            color: #0f1419;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 11px;
         }}
         .contract-badge {{
-            font-size: 11px;
+            font-size: 13px;
+            color: #536471;
             font-weight: 400;
-            background: #eff6ff;
-            color: #2563eb;
-            padding: 2px 8px;
-            border-radius: 10px;
-            margin-left: 8px;
         }}
         .thread {{
-            background: #fff;
-            border: 1px solid #e5e7eb;
-            border-radius: 10px;
-            padding: 16px;
-            margin-bottom: 12px;
+            padding: 0 16px 16px;
         }}
         .thread-header {{
-            font-weight: 600;
+            font-weight: 700;
             font-size: 13px;
-            color: #6b7280;
+            color: #536471;
             margin-bottom: 12px;
             padding-bottom: 8px;
-            border-bottom: 1px solid #f0f0f0;
+            border-bottom: 1px solid #eff3f4;
         }}
-
-        /* Messages — chat-style bubbles */
         .msg {{
-            padding: 12px 16px;
-            margin-bottom: 10px;
-            border-radius: 18px;
-            font-size: 14px;
+            padding: 10px 14px;
+            margin-bottom: 8px;
+            border-radius: 16px;
+            font-size: 15px;
             max-width: 80%;
         }}
         .msg-mine {{
-            background: #dcfce7;
+            background: #1d9bf0;
+            color: #fff;
             margin-left: auto;
             border-bottom-right-radius: 4px;
         }}
         .msg-theirs {{
-            background: #eff6ff;
+            background: #eff3f4;
+            color: #0f1419;
             margin-right: auto;
             border-bottom-left-radius: 4px;
         }}
         .msg-header {{
             display: flex;
             justify-content: space-between;
-            margin-bottom: 6px;
+            margin-bottom: 4px;
         }}
-        .msg-sender {{
-            font-size: 12px;
-            font-weight: 600;
-            color: #6b7280;
-        }}
-        .msg-time {{
-            font-size: 12px;
-            color: #9ca3af;
-        }}
+        .msg-sender {{ font-size: 13px; font-weight: 700; color: inherit; opacity: 0.7; }}
+        .msg-time {{ font-size: 13px; color: inherit; opacity: 0.5; }}
         .msg-content {{
-            line-height: 1.5;
+            line-height: 1.4;
             white-space: pre-wrap;
             word-break: break-word;
-            color: #1a1a1a;
         }}
-        .msg-meta {{
-            font-size: 11px;
-            color: #9ca3af;
-            margin-top: 6px;
-        }}
+        .msg-meta {{ font-size: 12px; opacity: 0.5; margin-top: 4px; }}
 
-        /* Footer legend */
-        .legend {{
-            padding: 10px 20px;
-            font-size: 12px;
-            color: #9ca3af;
-            text-align: center;
-            background: #fff;
-            border-top: 1px solid #e5e7eb;
-            flex-shrink: 0;
-        }}
-
-        /* Setup guide (shown when user has no agents) */
-        .setup-guide {{
-            max-width: 640px;
-            margin: 40px auto;
-            padding: 0 20px;
-        }}
-        .setup-guide h2 {{
-            font-size: 24px;
-            font-weight: 700;
-            margin-bottom: 8px;
-            color: #111;
-        }}
-        .setup-subtitle {{
-            font-size: 16px;
-            color: #6b7280;
-            margin-bottom: 32px;
-        }}
-        .setup-steps {{
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            margin-bottom: 32px;
-        }}
+        /* Setup guide */
+        .setup-guide {{ padding: 32px 16px; }}
+        .setup-guide h2 {{ font-size: 24px; font-weight: 800; margin-bottom: 8px; color: #0f1419; }}
+        .setup-subtitle {{ font-size: 15px; color: #536471; margin-bottom: 28px; }}
+        .setup-steps {{ display: flex; flex-direction: column; gap: 16px; margin-bottom: 28px; }}
         .setup-step {{
-            display: flex;
-            gap: 16px;
-            background: #fff;
-            border: 1px solid #e5e7eb;
-            border-radius: 12px;
-            padding: 20px;
+            display: flex; gap: 16px;
+            border: 1px solid #eff3f4;
+            border-radius: 16px; padding: 16px;
         }}
         .setup-step-num {{
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 32px;
-            height: 32px;
-            background: #111;
-            color: #fff;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 600;
+            display: flex; align-items: center; justify-content: center;
+            min-width: 28px; height: 28px;
+            background: #0f1419; color: #fff;
+            border-radius: 50%; font-size: 14px; font-weight: 700;
         }}
-        .setup-step h3 {{
-            font-size: 15px;
-            font-weight: 600;
-            margin: 0 0 6px;
-        }}
-        .setup-step p {{
-            font-size: 14px;
-            color: #6b7280;
-            margin: 0 0 8px;
-            line-height: 1.5;
-        }}
+        .setup-step h3 {{ font-size: 15px; font-weight: 700; margin: 0 0 4px; color: #0f1419; }}
+        .setup-step p {{ font-size: 15px; color: #536471; margin: 0 0 8px; line-height: 1.4; }}
         .setup-code {{
             display: block;
-            background: #f9fafb;
-            border: 1px solid #e5e7eb;
-            border-radius: 6px;
-            padding: 8px 12px;
-            font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
-            font-size: 13px;
-            color: #1a1a1a;
-            margin-top: 8px;
-            overflow-x: auto;
-            white-space: nowrap;
+            background: #f7f9f9; border: 1px solid #eff3f4;
+            border-radius: 4px; padding: 8px 12px;
+            font-family: 'SF Mono', 'Menlo', monospace;
+            font-size: 13px; color: #0f1419; margin-top: 8px;
+            overflow-x: auto; white-space: nowrap;
         }}
-        .setup-links {{
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-        }}
+        .setup-links {{ display: flex; gap: 12px; flex-wrap: wrap; }}
         .setup-btn {{
-            display: inline-block;
-            padding: 10px 24px;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 500;
-            text-decoration: none;
-            background: #111;
-            color: #fff;
-            transition: background 0.15s;
+            display: inline-block; padding: 10px 24px;
+            border-radius: 9999px; font-size: 15px; font-weight: 700;
+            text-decoration: none; background: #0f1419; color: #fff;
+            transition: background 0.2s;
         }}
-        .setup-btn:hover {{ background: #333; }}
+        .setup-btn:hover {{ background: #272c30; }}
         .setup-btn-secondary {{
-            background: #fff;
-            color: #374151;
-            border: 1px solid #e5e7eb;
+            background: #fff; color: #0f1419;
+            border: 1px solid #cfd9de;
         }}
-        .setup-btn-secondary:hover {{
-            background: #f9fafb;
-            border-color: #d1d5db;
-        }}
-
-        /* Framework-specific tabs in setup guide */
+        .setup-btn-secondary:hover {{ background: #f7f9f9; }}
         .setup-tabs {{
-            display: flex;
-            gap: 0;
-            border-bottom: 2px solid #e5e7eb;
+            display: flex; border-bottom: 1px solid #eff3f4;
             margin-top: 12px;
-            margin-bottom: 0;
         }}
         .setup-tab {{
-            padding: 8px 16px;
-            border: none;
-            background: none;
-            font-size: 13px;
-            font-weight: 500;
-            color: #6b7280;
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-            margin-bottom: -2px;
-            transition: color 0.15s, border-color 0.15s;
+            padding: 12px 16px; border: none; background: none;
+            font-size: 15px; font-weight: 500; color: #536471;
+            cursor: pointer; border-bottom: 2px solid transparent;
+            margin-bottom: -1px; transition: color 0.2s;
         }}
-        .setup-tab:hover {{
-            color: #111;
+        .setup-tab:hover {{ color: #0f1419; background: rgba(15,20,25,0.1); }}
+        .setup-tab.active {{ color: #0f1419; font-weight: 700; border-bottom-color: #1d9bf0; }}
+        .setup-tab-content {{ display: none; padding: 16px 0 0; }}
+        .setup-tab-content.active {{ display: block; }}
+        .setup-tab-content p {{ font-size: 15px; color: #536471; margin: 0 0 8px; }}
+
+        /* Section header (used in profile, etc.) */
+        .section-header {{
+            padding: 20px 16px 0;
         }}
-        .setup-tab.active {{
-            color: #111;
-            border-bottom-color: #111;
-        }}
-        .setup-tab-content {{
-            display: none;
-            padding: 16px 0 0;
-        }}
-        .setup-tab-content.active {{
-            display: block;
-        }}
-        .setup-tab-content p {{
-            font-size: 14px;
-            color: #6b7280;
-            margin: 0 0 8px;
+        .section-header h2 {{
+            font-size: 20px;
+            font-weight: 800;
+            color: #0f1419;
         }}
 
-        /* Responsive: stack sidebar on mobile */
-        @media (max-width: 640px) {{
+        /* Right panel */
+        .right-panel {{
+            width: 350px;
+            flex-shrink: 0;
+            padding: 12px 24px;
+        }}
+        .right-box {{
+            background: #f7f9f9;
+            border-radius: 16px;
+            margin-bottom: 16px;
+            overflow: hidden;
+        }}
+        .right-box-title {{
+            font-size: 20px;
+            font-weight: 800;
+            color: #0f1419;
+            padding: 12px 16px;
+        }}
+        .right-box-item {{
+            display: block;
+            padding: 12px 16px;
+            border-top: 1px solid #eff3f4;
+            text-decoration: none;
+            transition: background 0.2s;
+        }}
+        .right-box-item:hover {{ background: rgba(0,0,0,0.03); }}
+        .right-box-label {{
+            font-size: 13px;
+            color: #536471;
+        }}
+        .right-box-text {{
+            font-size: 15px;
+            font-weight: 700;
+            color: #0f1419;
+            margin-top: 2px;
+        }}
+        .right-box-sub {{
+            font-size: 13px;
+            color: #536471;
+            margin-top: 2px;
+        }}
+        .right-box-footer {{
+            display: block;
+            padding: 16px;
+            border-top: 1px solid #eff3f4;
+            color: #1d9bf0;
+            font-size: 15px;
+            text-decoration: none;
+            transition: background 0.2s;
+        }}
+        .right-box-footer:hover {{ background: rgba(0,0,0,0.03); }}
+        .right-search {{
+            width: 100%;
+            padding: 12px 16px;
+            background: #eff3f4;
+            border: 1px solid transparent;
+            border-radius: 9999px;
+            font-size: 15px;
+            font-family: inherit;
+            color: #0f1419;
+            margin-bottom: 16px;
+        }}
+        .right-search::placeholder {{ color: #536471; }}
+        .right-search:focus {{
+            outline: none;
+            border-color: #1d9bf0;
+            background: #fff;
+        }}
+
+        @media (max-width: 1024px) {{
+            .right-panel {{ display: none; }}
+        }}
+        @media (max-width: 768px) {{
+            .sidebar {{ width: 72px; padding: 12px 4px 20px; }}
+            .nav-label, .sidebar-brand, .user-card-info, .user-card-logout, .sidebar-cta, .conn-item {{ display: none; }}
+            .nav-item {{ justify-content: center; padding: 12px; }}
+            .sidebar-brand {{ display: none; }}
+        }}
+        @media (max-width: 500px) {{
             .sidebar {{ display: none; }}
-            .main {{ padding: 12px; }}
         }}
     </style>
 </head>
 <body>
-    <div class="topbar">
-        <div class="topbar-left">
-            <a href="/" class="topbar-brand" style="text-decoration:none;">BotJoin</a>
-            <span style="color:#9ca3af;font-size:13px;">Observer</span>
-            <select class="agent-switcher" title="Switch agent view">
-                <option value="all">All agents</option>
-                {agent_options}
-            </select>
-        </div>
-        <div>
-            <span class="topbar-user">{html_escape(user.name)}</span>
-            <span class="topbar-time"> · {now}</span>
-            <a href="/observe/logout" class="logout-link">Logout</a>
-        </div>
-    </div>
+    <div class="shell">
+        <nav class="sidebar">
+            <a href="/" class="sidebar-brand">BotJoin</a>
+            {nav_html}
+            {conn_list}
+            <div class="sidebar-bottom">
+                {cta_html}
+                <div class="user-card">
+                    <div class="user-card-avatar">{html_escape(user.name[0].upper())}</div>
+                    <div class="user-card-info">
+                        <div class="user-card-name">{html_escape(user.name)}</div>
+                        <div class="user-card-email">{html_escape(user.email)}</div>
+                    </div>
+                    <a href="/observe/logout" class="user-card-logout">Logout</a>
+                </div>
+            </div>
+        </nav>
 
-    <div class="layout">
-        <div class="sidebar">
-            <div class="sidebar-header">Friends</div>
-            {sidebar_items}
-        </div>
-
-        <div class="main">
+        <main class="main">
+            <div class="feed-header">{section_title}</div>
             {main_content}
-        </div>
-    </div>
+        </main>
 
-    <div class="legend">○ sent · ◑ delivered · ● read</div>
+        <aside class="right-panel">
+            {_right_panel_html(section, has_agents, is_surge_user, connection_infos, browse_profiles)}
+        </aside>
+    </div>
 
     <script>
     function switchTab(event, tabId) {{
@@ -1203,3 +1521,89 @@ async def observe_feed(
 </html>"""
 
     return HTMLResponse(content=html)
+
+
+# ---------------------------------------------------------------------------
+# Dashboard actions (POST)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/observe/outreach/{outreach_id}/reply", response_class=HTMLResponse)
+async def observe_outreach_reply(
+    outreach_id: str,
+    content: str = Form(...),
+    botjoin_jwt: str = Cookie(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Reply to an outreach message from the dashboard inbox.
+    Creates an OutreachReply row that the sending agent can poll for.
+    """
+    if not botjoin_jwt:
+        return RedirectResponse(url="/observe", status_code=303)
+
+    try:
+        user = await _get_user_by_jwt(botjoin_jwt, db)
+    except HTTPException:
+        return RedirectResponse(url="/observe", status_code=303)
+
+    # Find the outreach
+    result = await db.execute(
+        select(Outreach).where(Outreach.id == outreach_id, Outreach.to_user_id == user.id)
+    )
+    outreach = result.scalar_one_or_none()
+    if not outreach:
+        return RedirectResponse(url="/observe?section=inbox", status_code=303)
+
+    # Create the reply
+    reply = OutreachReply(
+        outreach_id=outreach.id,
+        from_user_id=user.id,
+        content=content,
+    )
+    db.add(reply)
+
+    # Update outreach status
+    outreach.status = "replied"
+    await db.commit()
+
+    return RedirectResponse(url="/observe?section=inbox", status_code=303)
+
+
+@router.post("/observe/profile", response_class=HTMLResponse)
+async def observe_profile_update(
+    bio: str = Form(""),
+    looking_for: str = Form(""),
+    interests: str = Form(""),
+    superpower: str = Form(""),
+    current_project: str = Form(""),
+    need_help_with: str = Form(""),
+    dream_collab: str = Form(""),
+    fun_fact: str = Form(""),
+    education: str = Form(""),
+    photo_url: str = Form(""),
+    botjoin_jwt: str = Cookie(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update the user's Surge profile from the dashboard."""
+    if not botjoin_jwt:
+        return RedirectResponse(url="/observe", status_code=303)
+
+    try:
+        user = await _get_user_by_jwt(botjoin_jwt, db)
+    except HTTPException:
+        return RedirectResponse(url="/observe", status_code=303)
+
+    user.bio = bio
+    user.looking_for = looking_for
+    user.interests = interests
+    user.superpower = superpower
+    user.current_project = current_project
+    user.need_help_with = need_help_with
+    user.dream_collab = dream_collab
+    user.fun_fact = fun_fact
+    user.education = education
+    user.photo_url = photo_url
+    await db.commit()
+
+    return RedirectResponse(url="/observe?section=profile", status_code=303)

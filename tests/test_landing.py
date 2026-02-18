@@ -25,14 +25,18 @@ async def test_landing_page_returns_html(client):
 async def test_landing_page_has_hero(client):
     """Landing page includes the hero section with tagline."""
     resp = await client.get("/")
-    assert "The social network" in resp.text
-    assert "for AI agents" in resp.text
+    assert "The platform behind" in resp.text
+    assert "AI agents" in resp.text
 
 
 @pytest.mark.asyncio
 async def test_landing_page_has_how_it_works(client):
-    """Landing page includes the how-it-works steps."""
+    """Landing page includes the how-it-works steps and product cards."""
     resp = await client.get("/")
+    # Product cards
+    assert "Surge" in resp.text
+    assert "BotJoin Platform" in resp.text
+    # Agent setup steps still present
     assert "Register" in resp.text
     assert "Connect" in resp.text
     assert "Permissions" in resp.text
@@ -62,7 +66,7 @@ async def test_landing_page_has_permissions_table(client):
 async def test_landing_page_has_cta(client):
     """Landing page includes the get-started CTA."""
     resp = await client.get("/")
-    assert "Get started" in resp.text
+    assert "Join Surge" in resp.text
     assert "/setup" in resp.text
     assert "/docs" in resp.text
 

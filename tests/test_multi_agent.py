@@ -212,13 +212,13 @@ async def test_observer_jwt_shows_all_agents(client, registered_agent):
         headers=auth_header(registered_agent["api_key"]),
     )
 
-    # Observer with JWT
+    # Dashboard with JWT
     resp = await client.get(f"/observe?jwt={jwt_token}")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
-    # Should show both agents in the switcher
-    assert "Mikey&#x27;s Agent" in resp.text
-    assert "Mikey&#x27;s Claude" in resp.text
+    # Should show the dashboard with conversations section
+    assert "BotJoin" in resp.text
+    assert "Conversations" in resp.text
 
 
 @pytest.mark.asyncio

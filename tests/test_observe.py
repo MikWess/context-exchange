@@ -19,9 +19,9 @@ async def test_observe_returns_html(client, registered_agent):
     resp = await client.get(f"/observe?token={key}")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
-    assert "Observer" in resp.text
-    # Agent name appears in the switcher dropdown (HTML-escaped apostrophe)
-    assert "Mikey&#x27;s Agent" in resp.text
+    assert "BotJoin" in resp.text
+    # Conversations section is the default for agent users
+    assert "Conversations" in resp.text
 
 
 @pytest.mark.asyncio
@@ -60,7 +60,7 @@ async def test_observe_shows_messages(client, registered_agent, second_agent):
     )
 
     # Check the observer page shows it
-    resp = await client.get(f"/observe?token={key_a}")
+    resp = await client.get(f"/observe?token={key_a}&section=conversations")
     assert resp.status_code == 200
     assert "Thursday plans" in resp.text
     assert "Hey Sam, are you free Thursday?" in resp.text
@@ -146,8 +146,8 @@ async def test_observe_jwt_cookie_auth(client, registered_agent):
     client.cookies.set("botjoin_jwt", jwt_token)
     resp = await client.get("/observe")
     assert resp.status_code == 200
-    assert "Observer" in resp.text
-    assert "Mikey&#x27;s Agent" in resp.text
+    assert "BotJoin" in resp.text
+    assert "Conversations" in resp.text
 
 
 @pytest.mark.asyncio
@@ -253,12 +253,12 @@ async def test_observe_setup_guide_for_new_user(client):
     jwt_end = cookie_header.find(";", jwt_start)
     jwt_token = cookie_header[jwt_start:jwt_end]
 
-    # Visit the dashboard — should show setup guide, not empty conversations
+    # Visit the dashboard — should show setup guide (conversations section is default for non-surge users)
     client.cookies.set("botjoin_jwt", jwt_token)
-    resp = await client.get("/observe")
+    resp = await client.get("/observe?section=conversations")
     assert resp.status_code == 200
     assert "Welcome to BotJoin" in resp.text
-    assert "connect your first AI agent" in resp.text
+    assert "Connect your first AI agent" in resp.text
     assert "/setup" in resp.text  # Link to full setup instructions
     # Framework-specific tabs should be present
     assert "Claude Code" in resp.text
@@ -305,3 +305,170 @@ async def test_observe_login_has_register_link(client):
     assert resp.status_code == 200
     assert "Create an account" in resp.text
     assert "/observe/register" in resp.text
+
+
+# --- Dashboard sections ---
+
+
+async def _surge_login(client, name, email):
+    """Helper: sign up on Surge and get a JWT cookie for the dashboard."""
+    resp = await client.post(
+        "/surge/signup",
+        data={"name": name, "email": email, "bio": "Test bio", "looking_for": "Friends"},
+    )
+    html = resp.text
+    code_start = html.find("your code is: ") + len("your code is: ")
+    code = html[code_start:code_start + 6]
+    resp = await client.post(
+        "/surge/signup/verify",
+        data={"email": email, "code": code},
+    )
+    # Extract JWT from redirect response cookie
+    cookie_header = resp.headers.get("set-cookie", "")
+    jwt_start = cookie_header.find("botjoin_jwt=") + len("botjoin_jwt=")
+    jwt_end = cookie_header.find(";", jwt_start)
+    return cookie_header[jwt_start:jwt_end]
+
+
+@pytest.mark.asyncio
+async def test_observe_inbox_section(client):
+    """Surge user sees inbox section with outreach messages."""
+    jwt = await _surge_login(client, "Inbox User", "inbox@test.com")
+    client.cookies.set("botjoin_jwt", jwt)
+    resp = await client.get("/observe?section=inbox")
+    assert resp.status_code == 200
+    assert "Inbox" in resp.text
+    assert "No messages yet" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_observe_profile_section(client):
+    """Surge user sees their profile in the profile section."""
+    jwt = await _surge_login(client, "Profile User", "profile@test.com")
+    client.cookies.set("botjoin_jwt", jwt)
+    resp = await client.get("/observe?section=profile")
+    assert resp.status_code == 200
+    assert "My Profile" in resp.text
+    assert "Profile User" in resp.text
+    assert "Test bio" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_observe_profile_update(client):
+    """POST /observe/profile updates the user's bio."""
+    jwt = await _surge_login(client, "Edit User", "edit@test.com")
+    client.cookies.set("botjoin_jwt", jwt)
+    resp = await client.post(
+        "/observe/profile",
+        data={"bio": "Updated bio", "looking_for": "Jobs", "interests": "Python"},
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/observe?section=profile"
+
+    # Verify update took effect
+    resp = await client.get("/observe?section=profile")
+    assert "Updated bio" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_observe_browse_section(client):
+    """Browse section shows discoverable profiles."""
+    # Create a discoverable profile
+    await _surge_login(client, "Browse Target", "target@test.com")
+
+    # Login as a different user and browse
+    jwt = await _surge_login(client, "Browser", "browser@test.com")
+    client.cookies.set("botjoin_jwt", jwt)
+    resp = await client.get("/observe?section=browse")
+    assert resp.status_code == 200
+    assert "Browse" in resp.text
+    assert "Browse Target" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_observe_inbox_with_outreach(client, registered_agent):
+    """Inbox shows outreach messages from agents."""
+    # Create a Surge user
+    jwt = await _surge_login(client, "Outreach Target", "outreach-target@test.com")
+
+    # Agent reaches out to the Surge user
+    key = registered_agent["api_key"]
+    from tests.conftest import auth_header
+    search_resp = await client.get(
+        "/discover/search?q=outreach+target",
+        headers=auth_header(key),
+    )
+    profile_id = search_resp.json()[0]["id"]
+    await client.post(
+        f"/discover/profiles/{profile_id}/reach-out",
+        json={"message": "Hi! Want to collaborate?"},
+        headers=auth_header(key),
+    )
+
+    # Check inbox
+    client.cookies.set("botjoin_jwt", jwt)
+    resp = await client.get("/observe?section=inbox")
+    assert resp.status_code == 200
+    assert "Hi! Want to collaborate?" in resp.text
+    assert "Mikey" in resp.text  # From agent's human
+
+
+@pytest.mark.asyncio
+async def test_observe_outreach_reply(client, registered_agent):
+    """POST /observe/outreach/{id}/reply creates a reply."""
+    # Create Surge user and get outreach
+    jwt = await _surge_login(client, "Reply User", "reply@test.com")
+
+    key = registered_agent["api_key"]
+    from tests.conftest import auth_header
+    search_resp = await client.get(
+        "/discover/search?q=reply+user",
+        headers=auth_header(key),
+    )
+    profile_id = search_resp.json()[0]["id"]
+    outreach_resp = await client.post(
+        f"/discover/profiles/{profile_id}/reach-out",
+        json={"message": "Hello!"},
+        headers=auth_header(key),
+    )
+    outreach_id = outreach_resp.json()["outreach_id"]
+
+    # Reply from dashboard
+    client.cookies.set("botjoin_jwt", jwt)
+    resp = await client.post(
+        f"/observe/outreach/{outreach_id}/reply",
+        data={"content": "Thanks for reaching out!"},
+    )
+    assert resp.status_code == 303
+
+    # Agent can poll for the reply
+    resp = await client.get(
+        "/discover/outreach/replies",
+        headers=auth_header(key),
+    )
+    assert resp.status_code == 200
+    replies = resp.json()
+    assert len(replies) == 1
+    assert replies[0]["content"] == "Thanks for reaching out!"
+    assert replies[0]["from_name"] == "Reply User"
+
+
+@pytest.mark.asyncio
+async def test_observe_surge_user_default_section(client):
+    """Surge user defaults to inbox section."""
+    jwt = await _surge_login(client, "Default User", "default@test.com")
+    client.cookies.set("botjoin_jwt", jwt)
+    resp = await client.get("/observe")
+    assert resp.status_code == 200
+    assert "Inbox" in resp.text
+    assert "No messages yet" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_observe_agent_user_sees_join_surge_link(client, registered_agent):
+    """Agent user without Surge profile sees Join Surge CTA."""
+    login_data = await _login_and_verify(client, "mikey@test.com")
+    client.cookies.set("botjoin_jwt", login_data["token"])
+    resp = await client.get("/observe")
+    assert resp.status_code == 200
+    assert "Join Surge" in resp.text

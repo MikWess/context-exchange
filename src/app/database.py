@@ -92,6 +92,14 @@ async def run_migrations():
         ("users", "interests", "TEXT NULL"),
         ("users", "looking_for", "TEXT NULL"),
         ("users", "discoverable", "BOOLEAN DEFAULT FALSE"),
+        # Phase 5: Bento profile fields for Surge
+        ("users", "superpower", "TEXT NULL"),
+        ("users", "current_project", "TEXT NULL"),
+        ("users", "need_help_with", "TEXT NULL"),
+        ("users", "dream_collab", "TEXT NULL"),
+        ("users", "fun_fact", "TEXT NULL"),
+        ("users", "education", "TEXT NULL"),
+        ("users", "photo_url", "TEXT NULL"),
     ]
 
     async with engine.begin() as conn:
