@@ -41,6 +41,37 @@ from src.app.models import Agent, User, utcnow
 
 router = APIRouter(tags=["discover"])
 
+# Demo profiles shown when the platform is young (< 15 real profiles)
+DEMO_PROFILES = [
+    {"name": "Maya Chen", "bio": "CS junior at MIT. Building tools that make AI accessible to non-technical people. Hackathon addict.", "looking_for": "Summer internships, AI startups"},
+    {"name": "Hunter K.", "bio": "High school developer shipping real products. Currently building a social discovery platform. Fluent in React and hustle.", "looking_for": "Co-founders, early-stage startup people"},
+    {"name": "Priya Sharma", "bio": "Freelance UX designer. 4 years at agencies, now going independent. Love working on products people actually use.", "looking_for": "Side projects, startup design gigs"},
+    {"name": "Jordan Ellis", "bio": "Data scientist at a healthcare company. Nights and weekends I'm training models on music. Trying to bridge the gap.", "looking_for": "Creative collaborators, AI + music people"},
+    {"name": "Sam Okafor", "bio": "Dropped out to build. Currently bootstrapping a dev tools company. Previously interned at Stripe.", "looking_for": "Developers, beta testers, honest feedback"},
+    {"name": "Alex Rivera", "bio": "Content creator and marketing strategist. 50K followers talking about tech careers. I help people land jobs.", "looking_for": "Brand partnerships, edtech companies"},
+    {"name": "Nadia Petrov", "bio": "Grad student in computational biology. Using LLMs to analyze protein structures. It's working.", "looking_for": "Research collaborators, biotech connections"},
+    {"name": "Kai Washington", "bio": "Full-stack dev, 6 years experience. TypeScript, Python, infra. Looking to join something early that matters.", "looking_for": "Early-stage startups, founding engineer roles"},
+    {"name": "Lena Hoffmann", "bio": "Product manager transitioning from finance. Built internal tools at Goldman, now want to build for real users.", "looking_for": "Startup opportunities, product roles"},
+    {"name": "Marcus Lee", "bio": "Indie game developer. Shipped two titles on Steam. Now exploring AI-generated game content.", "looking_for": "Artists, musicians, AI researchers"},
+    {"name": "Tasha Brooks", "bio": "Teacher turned edtech builder. 8 years in the classroom, now coding the tools I wish I had.", "looking_for": "Edtech people, developers, schools to pilot with"},
+    {"name": "Diego Morales", "bio": "Mechanical engineer pivoting to software. Self-taught Python, building robotics automation tools.", "looking_for": "Tech mentors, junior dev roles, robotics startups"},
+    {"name": "Ava Kim", "bio": "Pre-med student fascinated by health tech. Building a symptom tracker app between organic chemistry sets.", "looking_for": "Health tech founders, developers, clinical advisors"},
+    {"name": "Jamal Foster", "bio": "Music producer and audio engineer. Making beats, building plugins, exploring AI-generated sound design.", "looking_for": "Creative collaborators, music tech startups"},
+    {"name": "Rachel Nguyen", "bio": "Open source contributor and DevRel at a YC startup. I explain hard things simply.", "looking_for": "Speaking opportunities, developer communities"},
+    {"name": "Ethan Park", "bio": "Finance analyst who codes. Built algorithmic trading bots on the side. Ready for something bigger.", "looking_for": "Fintech startups, quant roles, co-founders"},
+]
+
+DEMO_AVATAR_COLORS = [
+    "linear-gradient(135deg, #6366f1, #8b5cf6)",
+    "linear-gradient(135deg, #ec4899, #f43f5e)",
+    "linear-gradient(135deg, #f59e0b, #ef4444)",
+    "linear-gradient(135deg, #10b981, #14b8a6)",
+    "linear-gradient(135deg, #3b82f6, #6366f1)",
+    "linear-gradient(135deg, #8b5cf6, #ec4899)",
+    "linear-gradient(135deg, #06b6d4, #3b82f6)",
+    "linear-gradient(135deg, #f43f5e, #f59e0b)",
+]
+
 
 # ---------------------------------------------------------------------------
 # HTML helpers
@@ -370,6 +401,39 @@ a:hover { text-decoration: underline; }
 .footer a { color: #9ca3af; text-decoration: none; }
 .footer a:hover { color: #6b7280; }
 
+/* Demo section */
+.demo-divider {
+    text-align: center;
+    margin: 40px auto 24px;
+    max-width: 960px;
+    padding: 0 20px;
+    position: relative;
+}
+.demo-divider span {
+    background: #fafafa;
+    padding: 0 16px;
+    font-size: 13px;
+    color: #9ca3af;
+    position: relative;
+    z-index: 1;
+}
+.demo-divider::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 20px;
+    right: 20px;
+    height: 1px;
+    background: #e5e7eb;
+}
+.demo-grid .card {
+    opacity: 0.75;
+    transition: opacity 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+.demo-grid .card:hover {
+    opacity: 1;
+}
+
 @media (max-width: 640px) {
     .hero h1 { font-size: 28px; }
     .grid { grid-template-columns: 1fr; }
@@ -435,6 +499,30 @@ def _build_cards(profiles: list) -> str:
             </div>
             <div class="card-bio">{bio}</div>
             {looking_html}
+        </div>"""
+    return cards
+
+
+def _build_demo_cards() -> str:
+    """Build HTML for demo profile cards with varied avatar colors."""
+    cards = ""
+    for i, d in enumerate(DEMO_PROFILES):
+        color = DEMO_AVATAR_COLORS[i % len(DEMO_AVATAR_COLORS)]
+        initial = d["name"][0].upper()
+        name = html_escape(d["name"])
+        bio = html_escape(d["bio"])
+        looking_for = html_escape(d["looking_for"])
+
+        cards += f"""
+        <div class="card">
+            <div class="card-top">
+                <div class="card-avatar" style="background:{color}">{initial}</div>
+                <div>
+                    <div class="card-name">{name}</div>
+                </div>
+            </div>
+            <div class="card-bio">{bio}</div>
+            <div class="card-looking"><strong>Looking for:</strong> {looking_for}</div>
         </div>"""
     return cards
 
@@ -522,38 +610,52 @@ async def discover_browse(
         <a href="/discover/signup" class="hero-cta">Get discovered</a>
     </div>"""
 
-    if count == 0:
-        main_content = """
-        <div class="empty">
-            <h3>Be the first</h3>
-            <p>No one has put themselves out there yet. You could be first.</p>
-            <a href="/discover/signup" class="hero-cta" style="font-size:14px;padding:10px 24px;">Get discovered</a>
-        </div>"""
-    else:
+    # Search bar (always shown)
+    search = """
+    <div class="search-bar">
+        <input type="text" id="discover-search" placeholder="Search people, interests, skills..."
+               oninput="filterCards(this.value)">
+    </div>"""
+
+    # Real profiles section
+    if count > 0:
         people = "person" if count == 1 else "people"
         stats = f'<div class="stats"><strong>{count}</strong> {people} discoverable</div>'
-        search = """
-        <div class="search-bar">
-            <input type="text" id="discover-search" placeholder="Search people, interests, skills..."
-                   oninput="filterCards(this.value)">
-        </div>"""
-        cards = _build_cards(profiles)
+        real_cards = _build_cards(profiles)
         main_content = f"""
         {stats}
         {search}
         <div class="grid" id="discover-grid">
-            {cards}
-        </div>
-        <script>
-        function filterCards(query) {{
-            var q = query.toLowerCase();
-            var cards = document.querySelectorAll('.card');
-            cards.forEach(function(card) {{
-                var text = card.textContent.toLowerCase();
-                card.style.display = text.includes(q) ? '' : 'none';
-            }});
-        }}
-        </script>"""
+            {real_cards}
+        </div>"""
+    else:
+        main_content = search
+
+    # Demo profiles (shown when fewer than 15 real profiles)
+    if count < 15:
+        demo_label = "Example profiles" if count > 0 else "See what this looks like"
+        demo_cards = _build_demo_cards()
+        main_content += f"""
+        <div class="demo-divider"><span>{demo_label}</span></div>
+        <div class="grid demo-grid">
+            {demo_cards}
+        </div>"""
+
+    # Client-side search script
+    main_content += """
+    <script>
+    function filterCards(query) {
+        var q = query.toLowerCase();
+        var cards = document.querySelectorAll('.card');
+        cards.forEach(function(card) {
+            var text = card.textContent.toLowerCase();
+            card.style.display = text.includes(q) ? '' : 'none';
+        });
+        // Hide demo divider if searching
+        var divider = document.querySelector('.demo-divider');
+        if (divider) divider.style.display = q ? 'none' : '';
+    }
+    </script>"""
 
     return HTMLResponse(_page("BotJoin Discover", hero + main_content))
 

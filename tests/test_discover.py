@@ -18,12 +18,15 @@ from tests.conftest import auth_header
 
 @pytest.mark.asyncio
 async def test_discover_page_empty(client):
-    """GET /discover with no profiles shows empty state."""
+    """GET /discover with no real profiles shows demo profiles."""
     resp = await client.get("/discover")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
     assert "Put yourself out there" in resp.text
-    assert "Be the first" in resp.text
+    # Should show demo profiles
+    assert "See what this looks like" in resp.text
+    assert "Maya Chen" in resp.text
+    assert "Hunter K." in resp.text
 
 
 @pytest.mark.asyncio
