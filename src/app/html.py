@@ -18,7 +18,7 @@ LIGHT_THEME_CSS = """
     body {
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
         background: #ffffff;
-        color: #1a1a1a;
+        color: #0f1419;
         line-height: 1.6;
         -webkit-font-smoothing: antialiased;
     }
@@ -31,7 +31,7 @@ LIGHT_THEME_CSS = """
     h2 { font-size: 22px; font-weight: 600; margin-bottom: 8px; margin-top: 28px; }
     h3 { font-size: 17px; font-weight: 600; margin-bottom: 6px; margin-top: 24px; }
     p { margin-bottom: 12px; }
-    a { color: #2563eb; text-decoration: none; }
+    a { color: #1d9bf0; text-decoration: none; }
     a:hover { text-decoration: underline; }
     hr { border: none; border-top: 1px solid #e5e7eb; margin: 28px 0; }
     strong { font-weight: 600; }
@@ -80,7 +80,7 @@ LIGHT_THEME_CSS = """
     tr:last-child td {
         border-bottom: none;
     }
-    .muted { color: #6b7280; font-size: 14px; }
+    .muted { color: #536471; font-size: 14px; }
 """
 
 

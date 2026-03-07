@@ -33,7 +33,7 @@ DOCS_PAGE_CSS = """
     .docs-topnav-brand {
         font-size: 16px;
         font-weight: 700;
-        color: #1a1a1a;
+        color: #0f1419;
         text-decoration: none;
         letter-spacing: -0.3px;
         flex-shrink: 0;
@@ -57,7 +57,7 @@ DOCS_PAGE_CSS = """
     }
     .docs-search:focus {
         outline: none;
-        border-color: #2563eb;
+        border-color: #1d9bf0;
         box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
         background-color: #fff;
     }
@@ -72,11 +72,11 @@ DOCS_PAGE_CSS = """
         flex-shrink: 0;
     }
     .docs-topnav-links a {
-        color: #6b7280;
+        color: #536471;
         text-decoration: none;
         transition: color 0.15s;
     }
-    .docs-topnav-links a:hover { color: #1a1a1a; text-decoration: none; }
+    .docs-topnav-links a:hover { color: #0f1419; text-decoration: none; }
 
     /* Keyboard shortcut badge next to search */
     .docs-search-kbd {
@@ -136,19 +136,19 @@ DOCS_PAGE_CSS = """
         padding: 5px 12px;
         margin: 1px 0;
         font-size: 13px;
-        color: #6b7280;
+        color: #536471;
         text-decoration: none;
         border-radius: 6px;
         transition: all 0.1s;
         line-height: 1.4;
     }
     .sidebar-link:hover {
-        color: #1a1a1a;
+        color: #0f1419;
         background: #f3f4f6;
         text-decoration: none;
     }
     .sidebar-link.active {
-        color: #2563eb;
+        color: #1d9bf0;
         background: #eff6ff;
         font-weight: 500;
     }
@@ -191,13 +191,13 @@ DOCS_PAGE_CSS = """
         display: block;
         padding: 4px 0;
         font-size: 13px;
-        color: #6b7280;
+        color: #536471;
         text-decoration: none;
         transition: color 0.1s;
         line-height: 1.4;
     }
-    .toc-link:hover { color: #1a1a1a; text-decoration: none; }
-    .toc-link.active { color: #2563eb; font-weight: 500; }
+    .toc-link:hover { color: #0f1419; text-decoration: none; }
+    .toc-link.active { color: #1d9bf0; font-weight: 500; }
 
     /* --- Page header --- */
     .docs-header {
@@ -206,19 +206,19 @@ DOCS_PAGE_CSS = """
     .docs-header-label {
         font-size: 13px;
         font-weight: 600;
-        color: #2563eb;
+        color: #1d9bf0;
         margin-bottom: 4px;
     }
     .docs-header h1 {
         font-size: 32px;
         font-weight: 700;
         letter-spacing: -0.6px;
-        color: #111;
+        color: #0f1419;
         margin: 0 0 8px;
     }
     .docs-header p {
         font-size: 15px;
-        color: #6b7280;
+        color: #536471;
         margin: 0;
     }
 
@@ -231,13 +231,13 @@ DOCS_PAGE_CSS = """
         font-size: 22px;
         font-weight: 700;
         letter-spacing: -0.3px;
-        color: #111;
+        color: #0f1419;
         margin: 0 0 6px;
         padding-top: 16px;
         scroll-margin-top: 72px;
     }
     .docs-section > p {
-        color: #6b7280;
+        color: #536471;
         font-size: 14px;
         margin-bottom: 20px;
     }
@@ -271,14 +271,14 @@ DOCS_PAGE_CSS = """
         letter-spacing: 0.5px;
     }
     .method-get { background: #ecfdf5; color: #059669; }
-    .method-post { background: #eff6ff; color: #2563eb; }
+    .method-post { background: #eff6ff; color: #1d9bf0; }
     .method-put { background: #fefce8; color: #ca8a04; }
     .method-delete { background: #fef2f2; color: #dc2626; }
     .path {
         font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
         font-size: 14px;
         font-weight: 500;
-        color: #111;
+        color: #0f1419;
     }
     .auth-badge {
         font-size: 11px;
@@ -290,7 +290,7 @@ DOCS_PAGE_CSS = """
     }
     .endpoint-desc {
         font-size: 14px;
-        color: #6b7280;
+        color: #536471;
         margin: 0 0 12px;
         line-height: 1.5;
     }
@@ -343,7 +343,7 @@ DOCS_PAGE_CSS = """
     .field-table td:first-child {
         font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
         font-size: 12px;
-        color: #111;
+        color: #0f1419;
         white-space: nowrap;
     }
     .field-table tr:last-child td { border-bottom: none; }
@@ -367,11 +367,11 @@ DOCS_PAGE_CSS = """
         font-size: 14px;
         font-weight: 600;
         margin: 0 0 8px;
-        color: #111;
+        color: #0f1419;
     }
     .concept-card p, .concept-card li {
         font-size: 13px;
-        color: #6b7280;
+        color: #536471;
         margin: 0;
         line-height: 1.5;
     }
@@ -391,7 +391,7 @@ DOCS_PAGE_CSS = """
         border-top: 1px solid #e5e7eb;
     }
     .docs-footer a { color: #9ca3af; text-decoration: none; }
-    .docs-footer a:hover { color: #6b7280; }
+    .docs-footer a:hover { color: #536471; }
 
     /* --- Responsive: collapse sidebars on small screens --- */
     @media (max-width: 1100px) {
@@ -1218,7 +1218,7 @@ DOCS_PAGE_HTML = """
         var html = '';
         var sectionH2 = activeSection.querySelector('h2');
         if (sectionH2) {
-            html += '<a href="#' + sectionId + '" class="toc-link" style="font-weight:600;color:#111;">' + sectionH2.textContent + '</a>';
+            html += '<a href="#' + sectionId + '" class="toc-link" style="font-weight:600;color:#0f1419;">' + sectionH2.textContent + '</a>';
         }
 
         var sectionEndpoints = activeSection.querySelectorAll('.endpoint[id]');

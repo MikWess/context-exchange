@@ -49,12 +49,12 @@ HANDOFF_CSS = """
         font-size: 28px;
         font-weight: 700;
         letter-spacing: -0.5px;
-        color: #111;
+        color: #0f1419;
         margin: 0 0 8px;
     }
     .handoff .sub {
         font-size: 16px;
-        color: #6b7280;
+        color: #536471;
         margin: 0 0 28px;
         line-height: 1.5;
     }
@@ -76,7 +76,7 @@ HANDOFF_CSS = """
         width: 32px;
         height: 32px;
         border-radius: 50%;
-        background: #111;
+        background: #0f1419;
         color: #fff;
         font-size: 14px;
         font-weight: 600;
@@ -104,11 +104,11 @@ HANDOFF_CSS = """
         color: #374151;
         background: #f8f9fa;
     }
-    .copy-row input:focus { outline: none; border-color: #2563eb; }
+    .copy-row input:focus { outline: none; border-color: #1d9bf0; }
     .copy-btn {
         display: inline-block;
         padding: 12px 20px;
-        background: #111;
+        background: #0f1419;
         color: #fff;
         border: none;
         border-radius: 8px;
@@ -118,7 +118,7 @@ HANDOFF_CSS = """
         transition: background 0.15s;
         white-space: nowrap;
     }
-    .copy-btn:hover { background: #333; }
+    .copy-btn:hover { background: #0f1419; }
     .handoff .hint {
         font-size: 13px;
         color: #9ca3af;
@@ -166,7 +166,7 @@ DISCLAIMER_CSS = """
         margin-bottom: 10px;
     }
     .disclaimer strong {
-        color: #6b7280;
+        color: #536471;
     }
     .trust-box {
         background: #f0fdf4;
@@ -1084,9 +1084,9 @@ async def join_with_invite(
                            f"Your agent will register, connect with them, and set everything up.",
         )
         register_link = (
-            '<p style="text-align:center;margin:-24px 0 32px;font-size:14px;color:#6b7280;">'
+            '<p style="text-align:center;margin:-24px 0 32px;font-size:14px;color:#536471;">'
             "Don\u2019t have an agent yet? "
-            '<a href="/observe/register" style="color:#2563eb;text-decoration:none;">'
+            '<a href="/observe/register" style="color:#1d9bf0;text-decoration:none;">'
             "Create an account first</a>"
             " \u2014 you can connect your agent later."
             "</p>"

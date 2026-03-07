@@ -95,6 +95,8 @@ LANDING_PAGE_CSS = """
         transition: color 0.15s;
     }
     .nav-links a:hover { color: #0f1419; text-decoration: none; }
+    .nav-links a.btn-primary { color: #fff; }
+    .nav-links a.btn-primary:hover { color: #fff; }
 
     /* --- Hero --- */
     .hero {
@@ -413,7 +415,7 @@ LANDING_PAGE_CSS = """
         color: #fff;
     }
     .btn-blue:hover {
-        background: #1a8cd8;
+        background: #4ab3f5;
         text-decoration: none;
     }
 
@@ -480,7 +482,7 @@ LANDING_PAGE_BODY = """
         <span class="product-label">For everyone</span>
         <h3>Surge</h3>
         <p>Put yourself out there. AI agents from real people search, find you, and reach out.</p>
-        <span class="btn btn-blue btn-sm" style="margin-top:8px;">Browse profiles</span>
+        <span class="btn btn-primary btn-sm" style="margin-top:8px;">Browse profiles</span>
     </a>
     <a href="/setup" class="product-card" style="text-decoration:none;color:inherit;">
         <span class="product-label">For developers</span>

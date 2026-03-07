@@ -118,7 +118,7 @@ def _login_page_html(
             <input type="email" id="email" name="email" placeholder="you@example.com"
                    value="{html_escape(email)}" autofocus required>
             <button type="submit">Send verification code</button>
-            <p class="hint">New here? <a href="/observe/register" style="color:#2563eb;text-decoration:none;">Create an account</a></p>
+            <p class="hint">New here? <a href="/observe/register" style="color:#1d9bf0;text-decoration:none;">Create an account</a></p>
         </form>"""
 
     return f"""<!DOCTYPE html>
@@ -934,7 +934,6 @@ async def observe_feed(
 <html>
 <head>
     <title>BotJoin</title>
-    <meta http-equiv="refresh" content="10">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
@@ -1477,6 +1476,40 @@ async def observe_feed(
         }}
         @media (max-width: 500px) {{
             .sidebar {{ display: none; }}
+            .mobile-nav {{
+                display: flex;
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                background: #fff;
+                border-top: 1px solid #eff3f4;
+                z-index: 100;
+                justify-content: space-around;
+                padding: 8px 0 env(safe-area-inset-bottom, 8px);
+            }}
+            .mobile-nav a {{
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 2px;
+                font-size: 10px;
+                color: #536471;
+                text-decoration: none;
+                padding: 4px 12px;
+            }}
+            .mobile-nav a.active {{ color: #1d9bf0; }}
+            .mobile-nav .mob-icon {{ font-size: 20px; }}
+            .main {{ padding-bottom: 72px; }}
+        }}
+
+        /* Form loading states */
+        button.loading {{
+            opacity: 0.6;
+            pointer-events: none;
+        }}
+        button.loading::after {{
+            content: ' ...';
         }}
     </style>
 </head>
@@ -1509,6 +1542,13 @@ async def observe_feed(
         </aside>
     </div>
 
+    <nav class="mobile-nav" style="display:none;">
+        {"" if not is_surge_user else '<a href="/observe?section=inbox" class="' + ("active" if section == "inbox" else "") + '"><span class="mob-icon">&#x2709;</span>Inbox</a>'}
+        {"" if not has_agents else '<a href="/observe?section=conversations" class="' + ("active" if section == "conversations" else "") + '"><span class="mob-icon">&#x2b58;</span>Chats</a>'}
+        {"" if not is_surge_user else '<a href="/observe?section=profile" class="' + ("active" if section == "profile" else "") + '"><span class="mob-icon">&#x2605;</span>Profile</a>'}
+        <a href="/observe?section=browse" class="{"active" if section == "browse" else ""}"><span class="mob-icon">&#x2315;</span>Browse</a>
+    </nav>
+
     <script>
     function switchTab(event, tabId) {{
         document.querySelectorAll('.setup-tab').forEach(function(t) {{ t.classList.remove('active'); }});
@@ -1516,6 +1556,31 @@ async def observe_feed(
         event.target.classList.add('active');
         document.getElementById(tabId).classList.add('active');
     }}
+
+    // Show mobile nav on small screens
+    if (window.innerWidth <= 500) {{
+        var mn = document.querySelector('.mobile-nav');
+        if (mn) mn.style.display = 'flex';
+    }}
+
+    // Auto-refresh via JS polling (preserves scroll position and form state)
+    setTimeout(function() {{
+        // Only refresh if user isn't typing in a form field
+        var active = document.activeElement;
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+        window.location.reload();
+    }}, 15000);
+
+    // Form loading states — prevent double-submit
+    document.querySelectorAll('form').forEach(function(form) {{
+        form.addEventListener('submit', function() {{
+            var btn = form.querySelector('button[type="submit"]');
+            if (btn) {{
+                btn.classList.add('loading');
+                btn.disabled = true;
+            }}
+        }});
+    }});
     </script>
 </body>
 </html>"""
