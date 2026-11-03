@@ -5,6 +5,8 @@ Uses Resend (https://resend.com) for sending emails.
 In dev/test mode (no RESEND_API_KEY), emails are skipped — the code is
 returned directly in the response so agents can auto-verify.
 """
+from __future__ import annotations
+
 import logging
 import random
 import string

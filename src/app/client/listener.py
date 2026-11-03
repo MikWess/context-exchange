@@ -128,16 +128,14 @@ def refresh_connections(config):
     global _connection_cache, _cache_refreshed_at
 
     base = config["server_url"].rstrip("/")
-    my_id = config["agent_id"]
 
     # Get all connections
     connections = api_request(f"{base}/connections", config)
 
     new_cache = {}
     for conn in connections:
-        # The connected_agent field has the other agent's info
-        other = conn["connected_agent"]
-        other_id = other["id"]
+        # Connections belong to people; each connected user can own several agents.
+        agents = conn["connected_user"]["agents"]
 
         # Fetch permissions for this connection
         try:
@@ -152,11 +150,12 @@ def refresh_connections(config):
             log.warning(f"Failed to fetch permissions for connection {conn['id']}: {e}")
             perms = {}
 
-        new_cache[other_id] = {
-            "connection_id": conn["id"],
-            "agent_name": other["name"],
-            "permissions": perms,
-        }
+        for other in agents:
+            new_cache[other["id"]] = {
+                "connection_id": conn["id"],
+                "agent_name": other["name"],
+                "permissions": perms,
+            }
 
     _connection_cache = new_cache
     _cache_refreshed_at = time.time()
